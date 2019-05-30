@@ -21,7 +21,7 @@ def get_spectrum(audio_path):
     audio, rate = librosa.load(audio_path, sr=16000)
     audio, _ = librosa.effects.trim(audio)
     mel = librosa.feature.melspectrogram(y=audio, sr=rate, n_mels=80, fmax=8000)
-    return mel
+    return np.array(mel, dtype='float32')
 
 def label_binarizer(data):
     lb = preprocessing.LabelBinarizer()
@@ -59,6 +59,23 @@ def transform(audio_spec):
     transforms = [spec_volume, spec_shift, spec_speed]
     return np.random.choice(transforms)(audio_spec)
 
+def maxpad_spec(spec):
+    return np.asarray(list(map(lambda x: np.pad(x, [[0, 0], [0, 450 - x.shape[1]]], mode="constant"), spec)))
+
+def collate_fn(batch):
+    spec, labels = zip(*batch)
+    spec = spec[..., ::4]
+    padded_spec = maxpad_spec(spec)
+    return torch.from_numpy(padded_spec), torch.from_numpy(labels)
+
+def collate_fn_unlabbelled(batch):
+    (spec1, spec2), labels = zip(*batch)
+    spec1 = spec1[..., ::4]
+    spec2 = spec2[..., ::4]
+    padded_spec1 = maxpad_spec(spec1)
+    padded_spec2 = maxpad_spec(spec2)
+    return (torch.from_numpy(padded_spec1), torch.from_numpy(padded_spec2)), None
+
 def get_freesound():
     # root = "/Users/vigi99/kaggle/freesound/data"
     root = "/tts_data/kaggle/freesound/data"
@@ -94,7 +111,7 @@ class Freesound_labelled(Dataset):
         self.labels = labels
         self.transform = transform
         if self.labels is not None:
-            self.labels = lb.transform(self.labels)
+            self.labels = np.array(lb.transform(self.labels), dtype='int8')
 
     def __getitem__(self, index):
         spec, label = get_spectrum(self.files[index]), self.labels[index]
