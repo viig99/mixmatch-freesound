@@ -80,10 +80,10 @@ def main():
     print(f'==> Preparing freesound')
 
     train_labeled_set, train_unlabeled_set, val_set, test_set = dataset.get_freesound()
-    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
-    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
-    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn)
+    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn_unlabbelled)
+    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn)
+    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn)
 
     # Model
     print("==> creating WRN-28-2")

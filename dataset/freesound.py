@@ -21,7 +21,7 @@ def get_spectrum(audio_path):
     audio, rate = librosa.load(audio_path, sr=16000)
     audio, _ = librosa.effects.trim(audio)
     mel = librosa.feature.melspectrogram(y=audio, sr=rate, n_mels=80, fmax=8000)
-    return mel
+    return np.array(mel, dtype='float32')
 
 def label_binarizer(data):
     lb = preprocessing.LabelBinarizer()
@@ -29,7 +29,7 @@ def label_binarizer(data):
     return lb
 
 def spec_volume(audio_spec):
-    volume = np.random.normal(0, 10)
+    volume = int(np.random.normal(0, 10))
     audio_spec_increased_volume = librosa.core.amplitude_to_db(audio_spec, amin=1e-3, top_db=100) + volume
     return librosa.core.db_to_amplitude(audio_spec_increased_volume)
 
@@ -38,13 +38,13 @@ def spec_volume(audio_spec):
 #     return warped_masked_spectrogram
 
 def spec_shift(audio_spec):
-    shift_samples = np.random.normal(0, 20)
+    shift_samples = int(np.random.normal(0, 20))
     if shift_samples > 0:
-        audio_spec[:-shift_samples] = audio_spec[shift_samples:]
-        audio_spec[-shift_samples:] = 0
+        audio_spec[..., :-shift_samples] = audio_spec[..., shift_samples:]
+        audio_spec[..., -shift_samples:] = 0
     elif shift_samples < 0:
-        audio_spec[-shift_samples:] = audio_spec[:shift_samples]
-        audio_spec[:-shift_samples] = 0
+        audio_spec[..., -shift_samples:] = audio_spec[..., :shift_samples]
+        audio_spec[..., :-shift_samples] = 0
     return audio_spec
 
 def spec_speed(audio_spec):
@@ -56,8 +56,35 @@ def spec_speed(audio_spec):
     return np.interp(new_indices, old_indices, audio_spec)
 
 def transform(audio_spec):
-    transforms = [spec_volume, spec_shift, spec_speed]
+    transforms = [spec_volume, spec_shift]
     return np.random.choice(transforms)(audio_spec)
+
+def maxpad_spec(spec):
+    return np.pad(spec, [[0, 0], [0, 450 - spec.shape[1]]], mode="constant")
+
+def collate_fn(batch):
+    specs, labels = zip(*batch)
+    padded_specs = []
+    for spec in specs:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs.append(padded_spec)
+    padded_specs = np.concatenate(padded_specs)
+    labels = np.concatenate(labels)
+    return torch.from_numpy(padded_specs), torch.from_numpy(labels)
+
+def collate_fn_unlabbelled(batch):
+    (spec1, spec2), labels = zip(*batch)
+    padded_specs1 = []
+    for spec in spec1:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs1.append(padded_spec)
+    padded_specs2 = []
+    for spec in spec2:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs2.append(padded_spec)
+    padded_specs1 = np.concatenate(padded_specs1)
+    padded_specs2 = np.concatenate(padded_specs2)
+    return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), None
 
 def get_freesound():
     # root = "/Users/vigi99/kaggle/freesound/data"
@@ -94,10 +121,14 @@ class Freesound_labelled(Dataset):
         self.labels = labels
         self.transform = transform
         if self.labels is not None:
-            self.labels = lb.transform(self.labels)
+            self.labels = np.array(lb.transform(self.labels), dtype='int8')
 
     def __getitem__(self, index):
-        spec, label = get_spectrum(self.files[index]), self.labels[index]
+        spec = get_spectrum(self.files[index])
+        if self.labels is not None:
+            label = self.labels[index]
+        else:
+            label = None
         if self.transform is not None:
             spec = self.transform(spec)
         return spec, label
