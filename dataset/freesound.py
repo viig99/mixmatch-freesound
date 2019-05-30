@@ -29,7 +29,7 @@ def label_binarizer(data):
     return lb
 
 def spec_volume(audio_spec):
-    volume = np.random.normal(0, 10)
+    volume = int(np.random.normal(0, 10))
     audio_spec_increased_volume = librosa.core.amplitude_to_db(audio_spec, amin=1e-3, top_db=100) + volume
     return librosa.core.db_to_amplitude(audio_spec_increased_volume)
 
@@ -38,13 +38,13 @@ def spec_volume(audio_spec):
 #     return warped_masked_spectrogram
 
 def spec_shift(audio_spec):
-    shift_samples = np.random.normal(0, 20)
+    shift_samples = int(np.random.normal(0, 20))
     if shift_samples > 0:
-        audio_spec[:-shift_samples] = audio_spec[shift_samples:]
-        audio_spec[-shift_samples:] = 0
+        audio_spec[..., :-shift_samples] = audio_spec[..., shift_samples:]
+        audio_spec[..., -shift_samples:] = 0
     elif shift_samples < 0:
-        audio_spec[-shift_samples:] = audio_spec[:shift_samples]
-        audio_spec[:-shift_samples] = 0
+        audio_spec[..., -shift_samples:] = audio_spec[..., :shift_samples]
+        audio_spec[..., :-shift_samples] = 0
     return audio_spec
 
 def spec_speed(audio_spec):
@@ -56,7 +56,7 @@ def spec_speed(audio_spec):
     return np.interp(new_indices, old_indices, audio_spec)
 
 def transform(audio_spec):
-    transforms = [spec_volume, spec_shift, spec_speed]
+    transforms = [spec_volume, spec_shift]
     return np.random.choice(transforms)(audio_spec)
 
 def maxpad_spec(spec):
