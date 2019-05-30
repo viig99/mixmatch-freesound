@@ -80,9 +80,9 @@ def get_freesound():
     labelled_files_train, labelled_files_val, labelled_labels_train, labelled_labels_val = train_test_split(labelled_files, labelled_labels, test_size=0.1)
 
 
-    train_labeled_dataset = Freesound_labelled(root, labelled_files_train, labelled_labels_train, lb, transform=transform)
-    train_unlabeled_dataset = Freesound_unlabelled(root, unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(transform))
-    val_dataset = Freesound_labelled(root, labelled_files_val, labelled_labels_val, lb)
+    train_labeled_dataset = Freesound_labelled(labelled_files_train, labelled_labels_train, lb, transform=transform)
+    train_unlabeled_dataset = Freesound_unlabelled(unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(transform))
+    val_dataset = Freesound_labelled(labelled_files_val, labelled_labels_val, lb)
     test_dataset = val_dataset
 
     print (f"#Labeled: {len(labelled_files_train)} #Unlabeled: {len(unlabelled_files)} #Val: {len(labelled_files_val)}")
@@ -92,14 +92,18 @@ class Freesound_labelled(Dataset):
     def __init__(self, files, labels, lb, transform=None):
         self.files = files
         self.labels = labels
+        self.transform = transform
         if self.labels is not None:
             self.labels = lb.transform(self.labels)
 
     def __getitem__(self, index):
         spec, label = get_spectrum(self.files[index]), self.labels[index]
         if self.transform is not None:
-            img = self.transform(img)
+            spec = self.transform(spec)
         return spec, label
+
+    def __len__(self):
+        return len(self.files)
 
 class Freesound_unlabelled(Freesound_labelled):
     def __init__(self, files, labels, lb, transform=None):
