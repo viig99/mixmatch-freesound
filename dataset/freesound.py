@@ -63,18 +63,28 @@ def maxpad_spec(spec):
     return np.asarray(list(map(lambda x: np.pad(x, [[0, 0], [0, 450 - x.shape[1]]], mode="constant"), spec)))
 
 def collate_fn(batch):
-    spec, labels = zip(*batch)
-    spec = spec[..., ::4]
-    padded_spec = maxpad_spec(spec)
-    return torch.from_numpy(padded_spec), torch.from_numpy(labels)
+    specs, labels = zip(*batch)
+    padded_specs = []
+    for spec in specs:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs.append(padded_spec)
+    padded_specs = np.concatenate(padded_specs)
+    labels = np.concatenate(labels)
+    return torch.from_numpy(padded_specs), torch.from_numpy(labels)
 
 def collate_fn_unlabbelled(batch):
     (spec1, spec2), labels = zip(*batch)
-    spec1 = spec1[..., ::4]
-    spec2 = spec2[..., ::4]
-    padded_spec1 = maxpad_spec(spec1)
-    padded_spec2 = maxpad_spec(spec2)
-    return (torch.from_numpy(padded_spec1), torch.from_numpy(padded_spec2)), None
+    padded_specs1 = []
+    for spec in spec1:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs1.append(padded_spec)
+    padded_specs2 = []
+    for spec in spec2:
+        padded_spec = maxpad_spec(spec[..., ::4])
+        padded_specs2.append(padded_spec)
+    padded_specs1 = np.concatenate(padded_specs1)
+    padded_specs2 = np.concatenate(padded_specs2)
+    return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), None
 
 def get_freesound():
     # root = "/Users/vigi99/kaggle/freesound/data"
