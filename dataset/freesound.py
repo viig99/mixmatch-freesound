@@ -60,7 +60,7 @@ def transform(audio_spec):
     return np.random.choice(transforms)(audio_spec)
 
 def maxpad_spec(spec):
-    return np.asarray(list(map(lambda x: np.pad(x, [[0, 0], [0, 450 - x.shape[1]]], mode="constant"), spec)))
+    return np.pad(spec, [[0, 0], [0, 450 - spec.shape[1]]], mode="constant")
 
 def collate_fn(batch):
     specs, labels = zip(*batch)
@@ -124,7 +124,11 @@ class Freesound_labelled(Dataset):
             self.labels = np.array(lb.transform(self.labels), dtype='int8')
 
     def __getitem__(self, index):
-        spec, label = get_spectrum(self.files[index]), self.labels[index]
+        spec = get_spectrum(self.files[index])
+        if self.labels is not None:
+            label = self.labels[index]
+        else:
+            label = None
         if self.transform is not None:
             spec = self.transform(spec)
         return spec, label
