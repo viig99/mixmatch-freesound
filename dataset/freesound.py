@@ -68,12 +68,14 @@ def collate_fn(batch):
     for spec in specs:
         padded_spec = maxpad_spec(spec[..., ::4])
         padded_specs.append(padded_spec)
-    padded_specs = np.concatenate(padded_specs)
-    labels = np.concatenate(labels)
+    padded_specs = np.stack(padded_specs, axis=0)[:,np.newaxis, :]
+    labels = np.stack(labels, axis=0)
     return torch.from_numpy(padded_specs), torch.from_numpy(labels)
 
 def collate_fn_unlabbelled(batch):
-    (spec1, spec2), labels = zip(*batch)
+    spec, labels = zip(*batch)
+    spec1 = [x[0] for x in spec]
+    spec2 = [x[1] for x in spec]
     padded_specs1 = []
     for spec in spec1:
         padded_spec = maxpad_spec(spec[..., ::4])
@@ -82,8 +84,8 @@ def collate_fn_unlabbelled(batch):
     for spec in spec2:
         padded_spec = maxpad_spec(spec[..., ::4])
         padded_specs2.append(padded_spec)
-    padded_specs1 = np.concatenate(padded_specs1)
-    padded_specs2 = np.concatenate(padded_specs2)
+    padded_specs1 = np.stack(padded_specs1, axis=0)[:,np.newaxis, :]
+    padded_specs2 = np.stack(padded_specs2, axis=0)[:,np.newaxis, :]
     return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), None
 
 def get_freesound():
@@ -112,8 +114,8 @@ def get_freesound():
     val_dataset = Freesound_labelled(labelled_files_val, labelled_labels_val, lb)
     test_dataset = val_dataset
 
-    print (f"#Labeled: {len(labelled_files_train)} #Unlabeled: {len(unlabelled_files)} #Val: {len(labelled_files_val)}")
-    return train_labeled_dataset, train_unlabeled_dataset, val_dataset, test_dataset
+    print (f"#Labeled: {len(labelled_files_train)} #Unlabeled: {len(unlabelled_files)} #Val: {len(labelled_files_val)} #Num Classes: {len(lb.classes_)}")
+    return train_labeled_dataset, train_unlabeled_dataset, val_dataset, test_dataset, len(lb.classes_)
 
 class Freesound_labelled(Dataset):
     def __init__(self, files, labels, lb, transform=None):
@@ -121,7 +123,7 @@ class Freesound_labelled(Dataset):
         self.labels = labels
         self.transform = transform
         if self.labels is not None:
-            self.labels = np.array(lb.transform(self.labels), dtype='int8')
+            self.labels = np.array(lb.transform(self.labels), dtype='float32')
 
     def __getitem__(self, index):
         spec = get_spectrum(self.files[index])
@@ -138,5 +140,5 @@ class Freesound_labelled(Dataset):
 
 class Freesound_unlabelled(Freesound_labelled):
     def __init__(self, files, labels, lb, transform=None):
-        super(Freesound_unlabelled, self).__init__(files, labels, lb, transform=None)
+        super(Freesound_unlabelled, self).__init__(files, labels, lb, transform=transform)
         self.labels = None

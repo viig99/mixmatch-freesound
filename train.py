@@ -31,7 +31,7 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=64, type=int, metavar='N',
+parser.add_argument('--batch-size', default=32, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')
@@ -79,7 +79,7 @@ def main():
     # Data
     print(f'==> Preparing freesound')
 
-    train_labeled_set, train_unlabeled_set, val_set, test_set = dataset.get_freesound()
+    train_labeled_set, train_unlabeled_set, val_set, test_set, num_classes = dataset.get_freesound()
     labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn)
     unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn_unlabbelled)
     val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn)
@@ -89,7 +89,7 @@ def main():
     print("==> creating WRN-28-2")
 
     def create_model(ema=False):
-        model = models.WideResNet(num_classes=10)
+        model = models.WideResNet(num_classes=num_classes)
         model = model.cuda()
 
         if ema:
@@ -214,7 +214,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         batch_size = inputs_x.size(0)
 
         # Transform label to one-hot
-        targets_x = torch.zeros(batch_size, 10).scatter_(1, targets_x.view(-1,1), 1)
+        # targets_x = torch.zeros(batch_size, 10).scatter_(1, targets_x.view(-1,1), 1)
 
         if use_cuda:
             inputs_x, targets_x = inputs_x.cuda(), targets_x.cuda(non_blocking=True)
