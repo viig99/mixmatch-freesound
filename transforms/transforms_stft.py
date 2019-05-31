@@ -86,6 +86,10 @@ class AddBackgroundNoiseOnSTFT(Dataset):
 
 class SpecAugmentOnMel(object):
     def __call__(self, data):
+        if not should_apply_transform():
+            return data
+
+
         data['mel_spectrogram'] = spec_augment_pytorch.spec_augment(mel_spectrogram=data['mel_spectrogram'])
         return data
 
