@@ -6,8 +6,8 @@ import torch
 __all__ = ['accuracy', 'lwlrap_accumulator']
 
 def accuracy(scores, truth, topk=(1,)):
-	scores = torch.sigmoid(scores).numpy()
-	truth = truth.numpy()
+	scores = torch.sigmoid(scores).cpu().numpy()
+	truth = truth.cpu().numpy()
 	sample_weight = np.sum(truth > 0, axis=1)
 	nonzero_weight_sample_indices = np.flatnonzero(sample_weight > 0)
 	overall_lwlrap = sklearn.metrics.label_ranking_average_precision_score(
@@ -38,8 +38,8 @@ class lwlrap_accumulator(object):
 		self.total_num_samples = 0
 
 	def accumulate_samples(self, batch_truth, batch_scores):
-		batch_scores = torch.sigmoid(batch_scores).numpy()
-		batch_truth = batch_truth.numpy()
+		batch_scores = torch.sigmoid(batch_scores).cpu().numpy()
+		batch_truth = batch_truth.cpu().numpy()
 		assert batch_scores.shape == batch_truth.shape
 		num_samples, num_classes = batch_truth.shape
 		if not self.num_classes:

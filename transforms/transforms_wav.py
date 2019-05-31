@@ -19,8 +19,8 @@ class LoadAudio(object):
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
 
-    def __call__(self, data):
-        path = data['path']
+    def __call__(self, path):
+        data = {'path': path}
         if path:
             samples, sample_rate = librosa.load(path, self.sample_rate)
         else:
@@ -158,7 +158,7 @@ class ToTensor(object):
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = data[self.np_name]
+        tensor = data[self.np_name].astype(np.float32)
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean

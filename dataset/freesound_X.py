@@ -46,14 +46,13 @@ def collate_fn_unlabbelled(batch):
     return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), None
 
 def get_freesound():
-    root = "/Users/vigi99/kaggle/freesound/data"
-    # root = "/tts_data/kaggle/freesound/data"
+    # root = "/Users/vigi99/kaggle/freesound/data"
+    root = "/tts_data/kaggle/freesound/data"
     labelled_dir = os.path.join(root, "train_curated")
     unlabelled_dir = os.path.join(root, "train_noisy")
     test_dir = os.path.join(root, "test")
 
     labelled_df = pd.read_csv(os.path.join(root, "train_curated.csv"))
-    unlabelled_df = pd.read_csv(os.path.join(root, "train_noisy.csv"))
     unlabelled_df = pd.read_csv(os.path.join(root, "train_noisy.csv"))
 
     labelled_files = [os.path.join(labelled_dir, fname) for fname in labelled_df.fname.values]
@@ -61,7 +60,7 @@ def get_freesound():
     unlabelled_files = [os.path.join(unlabelled_dir, fname) for fname in unlabelled_df.fname.values]
     unlabelled_labels = [label.split(",") for label in unlabelled_df.labels.values]
 
-    lb = label_binarizer(labelled_df.labels.values.tolist() + unlabelled_df.labels.values.tolist())
+    lb = label_binarizer(labelled_labels + unlabelled_labels)
 
     labelled_files_train, labelled_files_val, labelled_labels_train, labelled_labels_val = train_test_split(labelled_files, labelled_labels, test_size=0.1)
 
@@ -69,8 +68,8 @@ def get_freesound():
     train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor('mel_spectrogram')])
     valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
 
-    train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform]))
-    valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform]))
+    train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform])
+    valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
     train_labeled_dataset = Freesound_labelled(labelled_files_train, labelled_labels_train, lb, transform=train_transforms)
     train_unlabeled_dataset = Freesound_unlabelled(unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(train_transforms))
