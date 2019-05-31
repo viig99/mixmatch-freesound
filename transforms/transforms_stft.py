@@ -10,6 +10,7 @@ import librosa
 from torch.utils.data import Dataset
 
 from .transforms_wav import should_apply_transform
+from specAugment import spec_augment_pytorch
 
 class ToSTFT(object):
     """Applies on an audio the short time fourier transform."""
@@ -81,6 +82,11 @@ class AddBackgroundNoiseOnSTFT(Dataset):
         noise = random.choice(self.bg_dataset)['stft']
         percentage = random.uniform(0, self.max_percentage)
         data['stft'] = data['stft'] * (1 - percentage) + noise * percentage
+        return data
+
+class SpecAugmentOnMel(object):
+    def __call__(self, data):
+        data['mel_spectrogram'] = spec_augment_pytorch.spec_augment(mel_spectrogram=data['mel_spectrogram'])
         return data
 
 class FixSTFTDimension(object):

@@ -19,8 +19,8 @@ class LoadAudio(object):
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
 
-    def __call__(self, data):
-        path = data['path']
+    def __call__(self, path):
+        data = {'path': path}
         if path:
             samples, sample_rate = librosa.load(path, self.sample_rate)
         else:
@@ -30,6 +30,15 @@ class LoadAudio(object):
         data['samples'] = samples
         data['sample_rate'] = sample_rate
         return data
+
+class TransformTwice:
+    def __init__(self, transform):
+        self.transform = transform
+
+    def __call__(self, inp):
+        out1 = self.transform(inp)
+        out2 = self.transform(inp)
+        return out1, out2
 
 class FixAudioLength(object):
     """Either pads or truncates an audio into a fixed length."""
@@ -44,6 +53,8 @@ class FixAudioLength(object):
         if length < len(samples):
             data['samples'] = samples[:length]
         elif length > len(samples):
+            times = np.floor(length / len(samples))
+            samples = np.stack([samples] * times)
             data['samples'] = np.pad(samples, (0, length - len(samples)), "constant")
         return data
 
@@ -144,16 +155,14 @@ class ToMelSpectrogram(object):
 class ToTensor(object):
     """Converts into a tensor."""
 
-    def __init__(self, np_name, tensor_name, normalize=None):
+    def __init__(self, np_name, normalize=None):
         self.np_name = np_name
-        self.tensor_name = tensor_name
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = torch.FloatTensor(data[self.np_name])
+        tensor = data[self.np_name].astype(np.float32)
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean
             tensor /= std
-        data[self.tensor_name] = tensor
-        return data
+        return tensor

@@ -21,8 +21,8 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 
 import models.wideresnet as models
-import dataset.freesound as dataset
-from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
+import dataset.freesound_X as dataset
+from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig, lwlrap_accumulator
 from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser(description='PyTorch MixMatch Training')
@@ -31,7 +31,7 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=32, type=int, metavar='N',
+parser.add_argument('--batch-size', default=16, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')
@@ -44,7 +44,7 @@ parser.add_argument('--manualSeed', type=int, default=0, help='manual seed')
 parser.add_argument('--gpu', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 #Method options
-parser.add_argument('--n-labeled', type=int, default=250,
+parser.add_argument('--n-labeled', type=int, default=4467,
                         help='Number of labeled data')
 parser.add_argument('--val-iteration', type=int, default=1024,
                         help='Number of labeled data')
@@ -69,6 +69,7 @@ if args.manualSeed is None:
 np.random.seed(args.manualSeed)
 
 best_acc = 0  # best test accuracy
+bce_loss = nn.BCEWithLogitsLoss()
 
 def main():
     global best_acc
@@ -105,7 +106,7 @@ def main():
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
     train_criterion = SemiLoss()
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     ema_optimizer= WeightEMA(model, ema_model, alpha=args.ema_decay)
@@ -305,8 +306,8 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    lrap = AverageMeter()
+    lwlrap_acc = lwlrap_accumulator()
 
     # switch to evaluate mode
     model.eval()
@@ -326,17 +327,15 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
+            lwlrap_acc.accumulate_samples(targets, outputs)
             losses.update(loss.item(), inputs.size(0))
-            top1.update(prec1.item(), inputs.size(0))
-            top5.update(prec5.item(), inputs.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
             # plot progress
-            bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | LRAP: {lrap: .4f}'.format(
                         batch=batch_idx + 1,
                         size=len(valloader),
                         data=data_time.avg,
@@ -344,12 +343,11 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
                         total=bar.elapsed_td,
                         eta=bar.eta_td,
                         loss=losses.avg,
-                        top1=top1.avg,
-                        top5=top5.avg,
+                        lrap=lwlrap_acc.overall_lwlrap()
                         )
             bar.next()
         bar.finish()
-    return (losses.avg, top1.avg)
+    return (losses.avg, lwlrap_acc.overall_lwlrap())
 
 def save_checkpoint(state, is_best, checkpoint=args.out, filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
@@ -366,9 +364,11 @@ def linear_rampup(current, rampup_length=16):
 
 class SemiLoss(object):
     def __call__(self, outputs_x, targets_x, outputs_u, targets_u, epoch):
-        probs_u = torch.softmax(outputs_u, dim=1)
+        probs_u = torch.sigmoid(outputs_u)
 
-        Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
+        Lx = bce_loss(outputs_x, targets_x)
+
+        # Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
         Lu = torch.mean((probs_u - targets_u)**2)
 
         return Lx, Lu, args.lambda_u * linear_rampup(epoch)
@@ -378,7 +378,7 @@ class WeightEMA(object):
         self.model = model
         self.ema_model = ema_model
         self.alpha = alpha
-        self.tmp_model = models.WideResNet(num_classes=10).cuda()
+        self.tmp_model = models.WideResNet(num_classes=80).cuda()
         self.wd = 0.02 * args.lr
 
         for param, ema_param in zip(self.model.parameters(), self.ema_model.parameters()):
