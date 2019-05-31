@@ -23,7 +23,7 @@ def collate_fn(batch):
     specs, labels = zip(*batch)
     padded_specs = []
     for spec in specs:
-        padded_spec = spec[..., ::1]
+        padded_spec = spec[..., ::2]
         padded_specs.append(padded_spec)
     padded_specs = np.stack(padded_specs, axis=0)[:,np.newaxis, :]
     labels = np.stack(labels, axis=0)
@@ -35,11 +35,11 @@ def collate_fn_unlabbelled(batch):
     spec2 = [x[1] for x in spec]
     padded_specs1 = []
     for spec in spec1:
-        padded_spec = spec[..., ::1]
+        padded_spec = spec[..., ::2]
         padded_specs1.append(padded_spec)
     padded_specs2 = []
     for spec in spec2:
-        padded_spec = spec[..., ::1]
+        padded_spec = spec[..., ::2]
         padded_specs2.append(padded_spec)
     padded_specs1 = np.stack(padded_specs1, axis=0)[:,np.newaxis, :]
     padded_specs2 = np.stack(padded_specs2, axis=0)[:,np.newaxis, :]

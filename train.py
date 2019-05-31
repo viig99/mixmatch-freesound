@@ -31,7 +31,7 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=16, type=int, metavar='N',
+parser.add_argument('--batch-size', default=8, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')
@@ -41,7 +41,7 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
 # Miscs
 parser.add_argument('--manualSeed', type=int, default=0, help='manual seed')
 #Device options
-parser.add_argument('--gpu', default='0', type=str,
+parser.add_argument('--gpu', default='0,1,2', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 #Method options
 parser.add_argument('--n-labeled', type=int, default=4467,
@@ -90,7 +90,7 @@ def main():
     print("==> creating WRN-28-2")
 
     def create_model(ema=False):
-        model = models.WideResNet(num_classes=num_classes)
+        model = nn.DataParallel(models.WideResNet(num_classes=num_classes))
         model = model.cuda()
 
         if ema:
