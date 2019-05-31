@@ -204,10 +204,10 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             inputs_x, targets_x = labeled_train_iter.next()
 
         try:
-            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
+            (inputs_u, inputs_u2), targets_u_prior = unlabeled_train_iter.next()
         except:
             unlabeled_train_iter = iter(unlabeled_trainloader)
-            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
+            (inputs_u, inputs_u2), targets_u_prior = unlabeled_train_iter.next()
 
         # measure data loading time
         data_time.update(time.time() - end)
@@ -227,9 +227,8 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             # compute guessed labels of unlabel samples
             outputs_u = model(inputs_u)
             outputs_u2 = model(inputs_u2)
-            p = (torch.softmax(outputs_u, dim=1) + torch.softmax(outputs_u2, dim=1)) / 2
-            pt = p**(1/args.T)
-            targets_u = pt / pt.sum(dim=1, keepdim=True)
+            p = (torch.sigmoid(outputs_u) + torch.sigmoid(outputs_u2)) / 2
+            targets_u = torch.sigmoid((p - 0.5) * 8)
             targets_u = targets_u.detach()
 
         # mixup

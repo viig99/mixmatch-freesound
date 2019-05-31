@@ -43,7 +43,8 @@ def collate_fn_unlabbelled(batch):
         padded_specs2.append(padded_spec)
     padded_specs1 = np.stack(padded_specs1, axis=0)[:,np.newaxis, :]
     padded_specs2 = np.stack(padded_specs2, axis=0)[:,np.newaxis, :]
-    return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), None
+    labels = np.stack(labels, axis=0)
+    return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), labels
 
 def get_freesound():
     # root = "/Users/vigi99/kaggle/freesound/data"
@@ -103,4 +104,3 @@ class Freesound_labelled(Dataset):
 class Freesound_unlabelled(Freesound_labelled):
     def __init__(self, files, labels, lb, transform=None):
         super(Freesound_unlabelled, self).__init__(files, labels, lb, transform=transform)
-        self.labels = None
