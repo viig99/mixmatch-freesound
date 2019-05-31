@@ -105,7 +105,7 @@ def main():
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
     train_criterion = SemiLoss()
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     ema_optimizer= WeightEMA(model, ema_model, alpha=args.ema_decay)
@@ -305,8 +305,8 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    lrap = AverageMeter()
+    lwlrap_acc = lwlrap_accumulator()
 
     # switch to evaluate mode
     model.eval()
@@ -326,17 +326,15 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
+            lwlrap_acc.accumulate_samples(targets, outputs)
             losses.update(loss.item(), inputs.size(0))
-            top1.update(prec1.item(), inputs.size(0))
-            top5.update(prec5.item(), inputs.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
             # plot progress
-            bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | LRAP: {lrap: .4f}}'.format(
                         batch=batch_idx + 1,
                         size=len(valloader),
                         data=data_time.avg,
@@ -344,12 +342,11 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
                         total=bar.elapsed_td,
                         eta=bar.eta_td,
                         loss=losses.avg,
-                        top1=top1.avg,
-                        top5=top5.avg,
+                        lrap=lwlrap_acc.overall_lwlrap()
                         )
             bar.next()
         bar.finish()
-    return (losses.avg, top1.avg)
+    return (losses.avg, lwlrap_acc.overall_lwlrap())
 
 def save_checkpoint(state, is_best, checkpoint=args.out, filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
@@ -366,9 +363,11 @@ def linear_rampup(current, rampup_length=16):
 
 class SemiLoss(object):
     def __call__(self, outputs_x, targets_x, outputs_u, targets_u, epoch):
-        probs_u = torch.softmax(outputs_u, dim=1)
+        probs_u = torch.sigmoid(outputs_u, dim=1)
 
-        Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
+        Lx = nn.BCEWithLogitsLoss(pos_weight=class_weights)(outputs_x, targets_x)
+
+        # Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
         Lu = torch.mean((probs_u - targets_u)**2)
 
         return Lx, Lu, args.lambda_u * linear_rampup(epoch)
