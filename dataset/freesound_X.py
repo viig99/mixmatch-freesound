@@ -65,7 +65,7 @@ def get_freesound():
     labelled_files_train, labelled_files_val, labelled_labels_train, labelled_labels_val = train_test_split(labelled_files, labelled_labels, test_size=0.1)
 
     data_aug_transform = Compose([ChangeAmplitude(), ChangeSpeedAndPitchAudio(), FixAudioLength(30), ToSTFT(), StretchAudioOnSTFT(), TimeshiftAudioOnSTFT(), FixSTFTDimension()])
-    train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor('mel_spectrogram')])
+    train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), SpecAugmentOnMel(), ToTensor('mel_spectrogram')])
     valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
 
     train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform])

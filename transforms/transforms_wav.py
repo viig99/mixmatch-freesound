@@ -53,6 +53,8 @@ class FixAudioLength(object):
         if length < len(samples):
             data['samples'] = samples[:length]
         elif length > len(samples):
+            times = np.floor(length / len(samples))
+            samples = np.stack([samples] * times)
             data['samples'] = np.pad(samples, (0, length - len(samples)), "constant")
         return data
 
