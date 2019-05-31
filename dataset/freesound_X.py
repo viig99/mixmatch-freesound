@@ -10,15 +10,6 @@ from sklearn import preprocessing
 from torchvision.transforms import *
 from transforms import *
 
-class TransformTwice:
-    def __init__(self, transform):
-        self.transform = transform
-
-    def __call__(self, inp):
-        out1 = self.transform(inp)
-        out2 = self.transform(inp)
-        return out1, out2
-
 def label_binarizer(data):
     lb = preprocessing.MultiLabelBinarizer()
     lb.fit(data)
@@ -32,7 +23,7 @@ def collate_fn(batch):
     specs, labels = zip(*batch)
     padded_specs = []
     for spec in specs:
-        padded_spec = spec[..., ::4]
+        padded_spec = spec[..., ::1]
         padded_specs.append(padded_spec)
     padded_specs = np.stack(padded_specs, axis=0)[:,np.newaxis, :]
     labels = np.stack(labels, axis=0)
@@ -44,11 +35,11 @@ def collate_fn_unlabbelled(batch):
     spec2 = [x[1] for x in spec]
     padded_specs1 = []
     for spec in spec1:
-        padded_spec = spec[..., ::4]
+        padded_spec = spec[..., ::1]
         padded_specs1.append(padded_spec)
     padded_specs2 = []
     for spec in spec2:
-        padded_spec = spec[..., ::4]
+        padded_spec = spec[..., ::1]
         padded_specs2.append(padded_spec)
     padded_specs1 = np.stack(padded_specs1, axis=0)[:,np.newaxis, :]
     padded_specs2 = np.stack(padded_specs2, axis=0)[:,np.newaxis, :]
@@ -75,14 +66,14 @@ def get_freesound():
     labelled_files_train, labelled_files_val, labelled_labels_train, labelled_labels_val = train_test_split(labelled_files, labelled_labels, test_size=0.1)
 
     data_aug_transform = Compose([ChangeAmplitude(), ChangeSpeedAndPitchAudio(), FixAudioLength(30), ToSTFT(), StretchAudioOnSTFT(), TimeshiftAudioOnSTFT(), FixSTFTDimension()])
-    train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor('mel_spectrogram', 'input')])
-    valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram', 'input')])
+    train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor('mel_spectrogram')])
+    valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
 
     train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform]))
     valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform]))
 
     train_labeled_dataset = Freesound_labelled(labelled_files_train, labelled_labels_train, lb, transform=train_transforms)
-    train_unlabeled_dataset = Freesound_unlabelled(unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(data_aug_transform))
+    train_unlabeled_dataset = Freesound_unlabelled(unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(train_transforms))
     val_dataset = Freesound_labelled(labelled_files_val, labelled_labels_val, lb, transform=valid_transforms)
     test_dataset = val_dataset
 

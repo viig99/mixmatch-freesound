@@ -31,6 +31,15 @@ class LoadAudio(object):
         data['sample_rate'] = sample_rate
         return data
 
+class TransformTwice:
+    def __init__(self, transform):
+        self.transform = transform
+
+    def __call__(self, inp):
+        out1 = self.transform(inp)
+        out2 = self.transform(inp)
+        return out1, out2
+
 class FixAudioLength(object):
     """Either pads or truncates an audio into a fixed length."""
 
@@ -144,16 +153,14 @@ class ToMelSpectrogram(object):
 class ToTensor(object):
     """Converts into a tensor."""
 
-    def __init__(self, np_name, tensor_name, normalize=None):
+    def __init__(self, np_name, normalize=None):
         self.np_name = np_name
-        self.tensor_name = tensor_name
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = torch.FloatTensor(data[self.np_name])
+        tensor = data[self.np_name]
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean
             tensor /= std
-        data[self.tensor_name] = tensor
-        return data
+        return tensor
