@@ -423,14 +423,31 @@ def collate_fn(batch):
     padded_specs = np.stack(padded_specs, axis=0)[:,np.newaxis, :]
     return torch.from_numpy(padded_specs), None
 
-test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
-model_path = os.path.abspath('../input/freesound2/weights.pk')
-sample_submission_file = 'submission.csv'
-lb_path = os.path.abspath('../input/freesound2/lb.pk')
+# Kaggle
+# test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
+# model_path = os.path.abspath('../input/freesound2/weights.pk')
+# sample_submission_file = 'submission.csv'
+# lb_path = os.path.abspath('../input/freesound2/lb.pk')
+
+# My PC
 # test_path = os.path.abspath('/Users/vigi99/kaggle/freesound/data/test')
 # model_path = os.path.abspath('result/weights.pk')
 # sample_submission_file = 'submission.csv'
 # lb_path = os.path.abspath('submission/lb.pk')
+
+'''
+import torch
+import pickle
+model_vals = torch.load('result/model_best.pth.tar', map_location='cpu')['ema_state_dict']
+pickle.dump(model_vals, open('result/weights.pk', 'wb'))
+'''
+
+# GPU Server
+test_path = os.path.abspath('/tts_data/kaggle/freesound/data/test')
+model_path = os.path.abspath('result/weights.pk')
+sample_submission_file = 'submission/submission.csv'
+lb_path = os.path.abspath('submission/lb.pk')
+
 batch_size = 8
 
 lb = pickle.load(open(lb_path, 'rb'))
