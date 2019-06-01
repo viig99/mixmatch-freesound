@@ -13,6 +13,7 @@ from torchvision.transforms import Compose
 import torch.utils.data as data
 from timeit import default_timer as timer
 from tqdm import tqdm
+from utils.eval import lwlrap_accumulator
 
 def should_apply_transform(prob=0.5):
     """Transforms are only randomly applied with the given probability."""
@@ -421,13 +422,14 @@ def collate_fn(batch):
         padded_spec = spec[..., ::2]
         padded_specs.append(padded_spec)
     padded_specs = np.stack(padded_specs, axis=0)[:,np.newaxis, :]
-    return torch.from_numpy(padded_specs), None
+    labels = np.stack(labels, axis=0)
+    return torch.from_numpy(padded_specs), torch.from_numpy(labels)
 
 # Kaggle
-test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
-model_path = os.path.abspath('../input/freesound2/weights_v2.pk')
-sample_submission_file = 'submission.csv'
-lb_path = os.path.abspath('../input/freesound2/lb.pk')
+# test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
+# model_path = os.path.abspath('../input/freesound2/weights.pk')
+# sample_submission_file = 'submission.csv'
+# lb_path = os.path.abspath('../input/freesound2/lb.pk')
 
 # My PC
 # test_path = os.path.abspath('/Users/vigi99/kaggle/freesound/data/test')
@@ -439,24 +441,28 @@ lb_path = os.path.abspath('../input/freesound2/lb.pk')
 import torch
 import pickle
 model_vals = torch.load('result/model_best.pth.tar', map_location='cpu')['ema_state_dict']
-pickle.dump(model_vals, open('result/weights_v2.pk', 'wb'))
+pickle.dump(model_vals, open('result/weights.pk', 'wb'))
 '''
 
 # GPU Server
-# test_path = os.path.abspath('/tts_data/split_train_curated/split_train_curated/test')
-# model_path = os.path.abspath('result/weights.pk')
-# sample_submission_file = 'submission/submission_split_train_test.csv'
-# lb_path = os.path.abspath('submission/lb.pk')
+test_path = os.path.abspath('/tts_data/split_train_curated/split_train_curated/test')
+model_path = os.path.abspath('result/weights_v2.pk')
+sample_submission_file = 'submission/submission_split_train_test.csv'
+lb_path = os.path.abspath('submission/lb.pk')
+correct_answers = os.path.abspath('/tts_data/split_train_curated/split_train_curated/train_curated.csv_test')
+df = pd.read_csv(correct_answers)
 
 batch_size = 8
 
 lb = pickle.load(open(lb_path, 'rb'))
+correct_labels = [labels.split(',') for labels in df['labels'].values]
 
-file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
+# file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
+file_paths = [os.path.join(test_path, file) for file in df['fname'].values]
 valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
 valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
-val_dataset = Freesound_labelled(file_paths, None, lb, transform=valid_transforms)
+val_dataset = Freesound_labelled(file_paths, correct_labels, lb, transform=valid_transforms)
 val_loader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=max(1, os.cpu_count() - 2), collate_fn=collate_fn)
 
 print('Loaded dataset')
@@ -470,12 +476,15 @@ if torch.cuda.is_available():
 
 result = []
 result_header = ['fname', *lb.classes_]
+lwlrap_acc = lwlrap_accumulator()
+
 with torch.no_grad():
     start_time = timer()
     for batch_idx, (inputs, targets) in enumerate(tqdm(val_loader)):
         if torch.cuda.is_available():
             inputs = inputs.cuda()
         outputs = model(inputs)
+        lwlrap_acc.accumulate_samples(targets, outputs)
         probs = torch.sigmoid(outputs).cpu().numpy().tolist()
         filenames = [os.path.basename(file) for file in np.array(val_dataset.files)[batch_size * batch_idx:batch_size * (batch_idx+1)].tolist()]
         for fname, prob in zip(filenames, probs):
@@ -484,5 +493,6 @@ with torch.no_grad():
     time_taken = timer() - start_time
     print('Total time taken was {:.4f} seconds'.format(time_taken))
     print("Time taken per example on cpu was {:.4f} seconds".format(time_taken / len(file_paths)))
+    print("LRAP for test set was {:.4f}".format(lwlrap_acc.overall_lwlrap()))
     df = pd.DataFrame(result, columns=result_header)
     df.to_csv(sample_submission_file, index=False)
