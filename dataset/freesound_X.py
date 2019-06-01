@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import librosa
-from specAugment import spec_augment_pytorch
 import os
 import pandas as pd
 from torch.utils.data import Dataset
@@ -14,10 +13,6 @@ def label_binarizer(data):
     lb = preprocessing.MultiLabelBinarizer()
     lb.fit(data)
     return lb
-
-def spec_augment(audio_spec):
-    warped_masked_spectrogram = spec_augment_pytorch.spec_augment(mel_spectrogram=audio_spec)
-    return warped_masked_spectrogram
 
 def collate_fn(batch):
     specs, labels = zip(*batch)
