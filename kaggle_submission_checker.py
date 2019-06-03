@@ -29,6 +29,7 @@ class LoadAudio(object):
         data = {'path': path}
         if path:
             samples, sample_rate = librosa.load(path, self.sample_rate)
+            # samples, _ = librosa.effects.trim(samples)
         else:
             # silence
             sample_rate = self.sample_rate
@@ -59,8 +60,6 @@ class FixAudioLength(object):
         if length < len(samples):
             data['samples'] = samples[:length]
         elif length > len(samples):
-            times = math.floor(length / len(samples))
-            samples = np.hstack([samples] * times)
             data['samples'] = np.pad(samples, (0, length - len(samples)), "constant")
         return data
 
@@ -446,7 +445,7 @@ pickle.dump(model_vals, open('result/weights.pk', 'wb'))
 
 # GPU Server
 test_path = os.path.abspath('/tts_data/split_train_curated/split_train_curated/dev')
-model_path = os.path.abspath('result/weights.pk')
+model_path = os.path.abspath('result/weights_v3.pk')
 sample_submission_file = 'submission/submission_split_train_dev.csv'
 lb_path = os.path.abspath('submission/lb.pk')
 correct_answers = os.path.abspath('/tts_data/split_train_curated/split_train_curated/train_curated.csv_dev')
