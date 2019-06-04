@@ -1,0 +1,4 @@
+result/
+submission/
+analysis/
+.git/

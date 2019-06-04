@@ -8,12 +8,12 @@ import os
 import sys
 import time
 import math
-
+import torch
 import torch.nn as nn
 import torch.nn.init as init
 from torch.autograd import Variable
 
-__all__ = ['get_mean_and_std', 'init_params', 'mkdir_p', 'AverageMeter']
+__all__ = ['get_mean_and_std', 'init_params', 'mkdir_p', 'AverageMeter', 'load_checkpoint']
 
 
 def get_mean_and_std(dataset):
@@ -74,3 +74,18 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+def load_state_dict(model, state_dict):
+    new_state_dict = model.state_dict()
+    for key in state_dict.keys():
+        new_state_dict[key.replace('module.', '')] = state_dict[key]
+    return new_state_dict
+
+def load_checkpoint(model, ema_model, optimizer):
+    best_checkpoint_path = os.path.abspath('result/model_best.pth.tar')
+    if os.path.exists(best_checkpoint_path):
+        checkpoint = torch.load(best_checkpoint_path, map_location='cpu')
+        model.load_state_dict(load_state_dict(model, checkpoint['state_dict']))
+        ema_model.load_state_dict(load_state_dict(ema_model, checkpoint['ema_state_dict']))
+        optimizer.load_state_dict(load_state_dict(optimizer, checkpoint['optimizer']))
+        print('All model checkpoints have been loaded!')
