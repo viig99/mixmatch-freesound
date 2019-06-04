@@ -5,7 +5,7 @@ from shutil import copyfile
 random.seed(9)
 
 base_dir = '/home/gpu_user/newdisk2/hari/data/freesound/'
-train_set = 'train_noisy'
+train_set = 'test'
 train_dir = base_dir + train_set + '/'
 train_csv = base_dir + 'processed/' + train_set + '.csv'
 
