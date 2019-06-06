@@ -1,0 +1,1 @@
+MPLBACKEND=agg OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3.6 train.py --resume=/tts_data/kaggle/mixmatch/MixMatch-pytorch/result_checkpoints/checkpoints/checkpoint_35.pth.tar

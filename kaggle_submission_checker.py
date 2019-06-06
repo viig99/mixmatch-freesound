@@ -494,4 +494,4 @@ with torch.no_grad():
     print("Time taken per example on cpu was {:.4f} seconds".format(time_taken / len(file_paths)))
     print("LRAP for test set was {:.4f}".format(lwlrap_acc.overall_lwlrap()))
     df = pd.DataFrame(result, columns=result_header)
-    # df.to_csv(sample_submission_file, index=False)
+    df.to_csv(sample_submission_file, index=False)
