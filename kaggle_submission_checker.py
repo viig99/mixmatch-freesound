@@ -448,8 +448,9 @@ test_path = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated')
 model_path = os.path.abspath('result/weights_noisy_mixmatch.pk')
 sample_submission_file = 'submission/submission_split_train_dev.csv'
 lb_path = os.path.abspath('submission/lb.pk')
-correct_answers = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_dev')
-df = pd.read_csv(correct_answers)
+correct_answers_1 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_dev')
+correct_answers_2 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_test')
+df = pd.concat([pd.read_csv(correct_answers_1), pd.read_csv(correct_answers_2)])
 
 batch_size = 8
 
