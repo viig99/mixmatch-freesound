@@ -53,8 +53,8 @@ parser.add_argument('--val-iteration', type=int, default=1024,
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.75, type=float)
-parser.add_argument('--lambda-u', default=2, type=float)
-parser.add_argument('--rampup-length', default=40, type=float)
+parser.add_argument('--lambda-u', default=1, type=float)
+parser.add_argument('--rampup-length', default=22, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 
@@ -278,7 +278,7 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
 
         Lx, Lu, Ln, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], outputs_n, targets_n, epoch+batch_idx/args.val_iteration)
 
-        loss = (10 * Lx) + (w * Lu) + (w * Ln)
+        loss = Lx + (w * Lu) + (w * Ln)
 
         # record loss
         losses.update(loss.item(), inputs_x.size(0))

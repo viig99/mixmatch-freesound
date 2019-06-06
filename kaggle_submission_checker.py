@@ -439,8 +439,8 @@ def collate_fn(batch):
 '''
 import torch
 import pickle
-model_vals = torch.load('result/model_best.pth.tar', map_location='cpu')['ema_state_dict']
-pickle.dump(model_vals, open('result/weights.pk', 'wb'))
+model_vals = torch.load('result_checkpoints/model_best.pth.tar', map_location='cpu')['ema_state_dict']
+pickle.dump(model_vals, open('result/weights_noisy_mixmatch.pk', 'wb'))
 '''
 
 # GPU Server
