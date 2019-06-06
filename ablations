@@ -5,3 +5,19 @@ v3-trim-default = 0.8763
 v3-no-trim = 0.8853
 v2-trim = 0.8349
 v2-no-trim = 0.8562
+
+DEV LRAP:
+
+with lp:
+3rd iteration - 0.0695
+5th iteration - 0.1165
+
+without lp:
+
+with lp + pretrain noisy:
+3rd iteration - 
+5th iteration - 0.0873
+
+with lp + pretrain noisy + pos class weightages:
+3rd iteration - 0.1046
+5th iteration - 0.1387

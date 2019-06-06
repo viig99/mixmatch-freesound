@@ -41,7 +41,7 @@ def collate_fn_unlabbelled(batch):
     labels = np.stack(labels, axis=0)
     return (torch.from_numpy(padded_specs1), torch.from_numpy(padded_specs2)), torch.from_numpy(labels)
 
-def get_freesound():
+def get_freesound(only_valid=False):
     # root = "/Users/vigi99/kaggle/freesound/data"
     root = "/tts_data/kaggle/freesound/data"
     labelled_dir = os.path.join(root, "train_curated")
@@ -67,6 +67,9 @@ def get_freesound():
 
     lb = label_binarizer(labelled_labels_train + labelled_labels_val + labelled_labels_dev + unlabelled_labels)
 
+    train_class_labels = lb.transform(labelled_labels_train)
+    pos_weights = torch.from_numpy(((train_class_labels.shape[0] - train_class_labels.sum(axis=0)) / train_class_labels.sum(axis=0)).astype(np.float32))
+
     data_aug_transform = Compose([ChangeAmplitude(), ChangeSpeedAndPitchAudio(), FixAudioLength(30), ToSTFT(), StretchAudioOnSTFT(), TimeshiftAudioOnSTFT(), FixSTFTDimension()])
     train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), SpecAugmentOnMel(), ToTensor('mel_spectrogram')])
     valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
@@ -74,13 +77,17 @@ def get_freesound():
     train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform])
     valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
+    if only_valid:
+        train_transforms = valid_transforms
+
     train_labeled_dataset = Freesound_labelled(labelled_files_train, labelled_labels_train, lb, transform=train_transforms)
+    train_unlabeled_warmstart_dataset = Freesound_labelled(labelled_files_train, labelled_labels_train, lb, transform=train_transforms)
     train_unlabeled_dataset = Freesound_unlabelled(unlabelled_files, unlabelled_labels, lb, transform=TransformTwice(train_transforms))
     val_dataset = Freesound_labelled(labelled_files_val, labelled_labels_val, lb, transform=valid_transforms)
     test_dataset = Freesound_labelled(labelled_files_dev, labelled_labels_dev, lb, transform=valid_transforms)
 
     print (f"#Labeled: {len(labelled_files_train)} #Unlabeled: {len(unlabelled_files)} #Val: {len(labelled_files_val)} #Dev: {len(labelled_files_dev)} #Num Classes: {len(lb.classes_)}")
-    return train_labeled_dataset, train_unlabeled_dataset, val_dataset, test_dataset, len(lb.classes_)
+    return train_labeled_dataset, train_unlabeled_dataset, val_dataset, test_dataset, train_unlabeled_warmstart_dataset, len(lb.classes_), pos_weights
 
 class Freesound_labelled(Dataset):
     def __init__(self, files, labels, lb, transform=None):

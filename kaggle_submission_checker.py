@@ -445,7 +445,7 @@ pickle.dump(model_vals, open('result/weights.pk', 'wb'))
 
 # GPU Server
 test_path = os.path.abspath('/tts_data/split_train_curated/split_train_curated/dev')
-model_path = os.path.abspath('result/weights_v3.pk')
+model_path = os.path.abspath('result/weights_noisy_mixmatch.pk')
 sample_submission_file = 'submission/submission_split_train_dev.csv'
 lb_path = os.path.abspath('submission/lb.pk')
 correct_answers = os.path.abspath('/tts_data/split_train_curated/split_train_curated/train_curated.csv_dev')

@@ -423,7 +423,7 @@ def collate_fn(batch):
 
 # Kaggle
 test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
-model_path = os.path.abspath('../input/freesound2/weights_v3.pk')
+model_path = os.path.abspath('../input/freesound2/weights_noisy_mixmatch.pk')
 sample_submission_file = 'submission.csv'
 lb_path = os.path.abspath('../input/freesound2/lb.pk')
 
@@ -437,7 +437,7 @@ lb_path = os.path.abspath('../input/freesound2/lb.pk')
 import torch
 import pickle
 model_vals = torch.load('result/model_best.pth.tar', map_location='cpu')['ema_state_dict']
-pickle.dump(model_vals, open('result/weights_v3.pk', 'wb'))
+pickle.dump(model_vals, open('result/weights_noisy_mixmatch.pk', 'wb'))
 '''
 
 # GPU Server

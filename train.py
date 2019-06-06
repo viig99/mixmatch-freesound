@@ -19,10 +19,12 @@ import torch.optim as optim
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from pytorch_toolbelt import losses as L
 import models.wideresnet as models
+from models.adamw import AdamW
 import dataset.freesound_X as dataset
-from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig, lwlrap_accumulator
+from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig, lwlrap_accumulator, load_checkpoint
 from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser(description='PyTorch MixMatch Training')
@@ -31,7 +33,7 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=8, type=int, metavar='N',
+parser.add_argument('--batch-size', default=24, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')
@@ -51,13 +53,17 @@ parser.add_argument('--val-iteration', type=int, default=1024,
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.75, type=float)
-parser.add_argument('--lambda-u', default=100, type=float)
-parser.add_argument('--T', default=0.5, type=float)
+parser.add_argument('--lambda-u', default=2, type=float)
+parser.add_argument('--rampup-length', default=40, type=float)
+parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
+
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = False
 
 # Use CUDA
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -69,7 +75,6 @@ if args.manualSeed is None:
 np.random.seed(args.manualSeed)
 
 best_acc = 0  # best test accuracy
-bce_loss = nn.BCEWithLogitsLoss()
 
 def main():
     global best_acc
@@ -80,18 +85,20 @@ def main():
     # Data
     print(f'==> Preparing freesound')
 
-    train_labeled_set, train_unlabeled_set, val_set, test_set, num_classes = dataset.get_freesound()
-    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn)
+    train_labeled_set, train_unlabeled_set, val_set, test_set, train_unlabeled_warmstart_set, num_classes, pos_weights = dataset.get_freesound()
+    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn, pin_memory=True)
+    noisy_train_loader = data.DataLoader(train_unlabeled_warmstart_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn)
     unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn_unlabbelled)
-    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn)
-    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn)
+    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn, pin_memory=True)
+    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn, pin_memory=True)
 
     # Model
-    print("==> creating WRN-28-2")
+    print("==> creating WRN-28-4")
 
     def create_model(ema=False):
         model = nn.DataParallel(models.WideResNet(num_classes=num_classes))
-        model = model.cuda()
+        if use_cuda:
+            model = model.cuda()
 
         if ema:
             for param in model.parameters():
@@ -101,15 +108,17 @@ def main():
 
     model = create_model()
     ema_model = create_model(ema=True)
-
-    cudnn.benchmark = True
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
-    train_criterion = SemiLoss()
+    bce_loss = L.BinaryFocalLoss()
+    train_criterion = SemiLoss(bce_loss, args.lambda_u)
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=1e-6)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', patience=10, verbose=True, threshold=1e-3, cooldown=10, min_lr=2e-6)
 
-    ema_optimizer= WeightEMA(model, ema_model, alpha=args.ema_decay)
+    # load_checkpoint(model, ema_model, optimizer)
+
+    ema_optimizer= WeightEMA(model, ema_model, num_classes, alpha=args.ema_decay)
     start_epoch = 0
 
     # Resume
@@ -119,13 +128,13 @@ def main():
         print('==> Resuming from checkpoint..')
         assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
         args.out = os.path.dirname(args.resume)
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, map_location='cpu')
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'])
         ema_model.load_state_dict(checkpoint['ema_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        logger = Logger(os.path.join(args.resume, 'log.txt'), title=title, resume=True)
+        logger = Logger(os.path.join('/tts_data/kaggle/mixmatch/MixMatch-pytorch/result', 'log.txt'), title=title, resume=True)
     else:
         logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
         logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U',  'Valid Loss', 'Valid Acc.', 'Test Loss', 'Test Acc.'])
@@ -135,10 +144,8 @@ def main():
     test_accs = []
     # Train and val
     for epoch in range(start_epoch, args.epochs):
-
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-
-        train_loss, train_loss_x, train_loss_u = train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_optimizer, train_criterion, epoch, use_cuda)
+        train_loss, train_loss_x, train_loss_u = train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model, optimizer, ema_optimizer, train_criterion, epoch, use_cuda)
         _, train_acc = validate(labeled_trainloader, ema_model, criterion, epoch, use_cuda, mode='Train Stats')
         val_loss, val_acc = validate(val_loader, ema_model, criterion, epoch, use_cuda, mode='Valid Stats')
         test_loss, test_acc = validate(test_loader, ema_model, criterion, epoch, use_cuda, mode='Test Stats ')
@@ -153,7 +160,7 @@ def main():
         writer.add_scalar('accuracy/val_acc', val_acc, step)
         writer.add_scalar('accuracy/test_acc', test_acc, step)
         
-        # scheduler.step()
+        scheduler.step(val_acc)
 
         # append logger file
         logger.append([train_loss, train_loss_x, train_loss_u, val_loss, val_acc, test_loss, test_acc])
@@ -168,7 +175,7 @@ def main():
                 'acc': val_acc,
                 'best_acc': best_acc,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best)
+            }, is_best, val_acc)
         test_accs.append(test_acc)
     logger.close()
     writer.close()
@@ -180,23 +187,28 @@ def main():
     print(np.mean(test_accs[-20:]))
 
 
-def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_optimizer, criterion, epoch, use_cuda):
+def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model, optimizer, ema_optimizer, criterion, epoch, use_cuda):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
     losses_x = AverageMeter()
     losses_u = AverageMeter()
+    losses_p = AverageMeter()
+    losses_n = AverageMeter()
     ws = AverageMeter()
     end = time.time()
 
-    bar = Bar('Training', max=args.val_iteration)
+    size = args.val_iteration
+
+    bar = Bar('Training', max=size)
     labeled_train_iter = iter(labeled_trainloader)
     unlabeled_train_iter = iter(unlabeled_trainloader)
+    noisy_train_iter = iter(noisy_train_loader)
 
     
     model.train()
-    for batch_idx in range(args.val_iteration):
+    for batch_idx in range(size):
         try:
             inputs_x, targets_x = labeled_train_iter.next()
         except:
@@ -204,32 +216,36 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             inputs_x, targets_x = labeled_train_iter.next()
 
         try:
-            (inputs_u, inputs_u2), targets_u_prior = unlabeled_train_iter.next()
+            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
         except:
             unlabeled_train_iter = iter(unlabeled_trainloader)
-            (inputs_u, inputs_u2), targets_u_prior = unlabeled_train_iter.next()
+            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
 
-        # measure data loading time
+        try:
+            inputs_n, targets_n = noisy_train_iter.next()
+        except:
+            noisy_train_iter = iter(noisy_train_loader)
+            inputs_n, targets_n = noisy_train_iter.next()
+
         data_time.update(time.time() - end)
 
         batch_size = inputs_x.size(0)
 
-        # Transform label to one-hot
-        # targets_x = torch.zeros(batch_size, 10).scatter_(1, targets_x.view(-1,1), 1)
-
         if use_cuda:
             inputs_x, targets_x = inputs_x.cuda(), targets_x.cuda(non_blocking=True)
+            inputs_n, targets_n = inputs_n.cuda(), targets_n.cuda(non_blocking=True)
             inputs_u = inputs_u.cuda()
             inputs_u2 = inputs_u2.cuda()
 
 
         with torch.no_grad():
-            # compute guessed labels of unlabel samples
             outputs_u = model(inputs_u)
             outputs_u2 = model(inputs_u2)
+            outputs_n = model(inputs_n)
             p = (torch.sigmoid(outputs_u) + torch.sigmoid(outputs_u2)) / 2
-            targets_u = torch.sigmoid((p - 0.5) * 8)
+            targets_u = torch.sigmoid((p - 0.5) * args.T)
             targets_u = targets_u.detach()
+            targets_n = targets_n.detach()
 
         # mixup
         all_inputs = torch.cat([inputs_x, inputs_u, inputs_u2], dim=0)
@@ -260,14 +276,15 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         logits_x = logits[0]
         logits_u = torch.cat(logits[1:], dim=0)
 
-        Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+batch_idx/args.val_iteration)
+        Lx, Lu, Ln, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], outputs_n, targets_n, epoch+batch_idx/args.val_iteration)
 
-        loss = Lx + w * Lu
+        loss = (10 * Lx) + (w * Lu) + (w * Ln)
 
         # record loss
         losses.update(loss.item(), inputs_x.size(0))
         losses_x.update(Lx.item(), inputs_x.size(0))
         losses_u.update(Lu.item(), inputs_x.size(0))
+        losses_n.update(Ln.item(), inputs_x.size(0))
         ws.update(w, inputs_x.size(0))
 
         # compute gradient and do SGD step
@@ -281,9 +298,9 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f} | W: {w:.4f}'.format(
+        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f} | Loss_n: {loss_n:.4f} | W: {w:.4f}'.format(
                     batch=batch_idx + 1,
-                    size=args.val_iteration,
+                    size=size,
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
@@ -291,6 +308,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
                     loss=losses.avg,
                     loss_x=losses_x.avg,
                     loss_u=losses_u.avg,
+                    loss_n=losses_n.avg,
                     w=ws.avg,
                     )
         bar.next()
@@ -348,36 +366,37 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
         bar.finish()
     return (losses.avg, lwlrap_acc.overall_lwlrap())
 
-def save_checkpoint(state, is_best, checkpoint=args.out, filename='checkpoint.pth.tar'):
-    filepath = os.path.join(checkpoint, filename)
+def save_checkpoint(state, is_best, val_acc, checkpoint=args.out, filename='checkpoint'):
+    filepath = os.path.join(checkpoint, f"checkpoints/{filename}_{state['epoch']}.pth.tar")
     torch.save(state, filepath)
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
+        print(f"Best accuracy model saved to {os.path.abspath('result/model_best.pth.tar')} with accuracy {val_acc:.4f}")
 
-def linear_rampup(current, rampup_length=16):
+def linear_rampup(current, rampup_length=args.rampup_length):
     if rampup_length == 0:
         return 1.0
     else:
-        current = np.clip(current / rampup_length, 0.0, 1.0)
+        current = np.clip((current / rampup_length) - 0.5, 0.0, 1.0)
         return float(current)
 
 class SemiLoss(object):
-    def __call__(self, outputs_x, targets_x, outputs_u, targets_u, epoch):
-        probs_u = torch.sigmoid(outputs_u)
+    def __init__(self, criterion, lambda_u):
+        self.criterion = criterion
+        self.lambda_u = lambda_u
 
-        Lx = bce_loss(outputs_x, targets_x)
-
-        # Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
-        Lu = torch.mean((probs_u - targets_u)**2)
-
-        return Lx, Lu, args.lambda_u * linear_rampup(epoch)
+    def __call__(self, outputs_x, targets_x, outputs_u, targets_u, outputs_n, targets_n, epoch):
+        Lx = self.criterion(outputs_x, targets_x)
+        Lu = torch.mean((torch.sigmoid(outputs_u) - targets_u)**2)
+        Ln = torch.mean((targets_n - (targets_n * torch.sigmoid(outputs_n)) ** 0.7) / 0.7)
+        return Lx, Lu, Ln, self.lambda_u * linear_rampup(epoch)
 
 class WeightEMA(object):
-    def __init__(self, model, ema_model, alpha=0.999):
+    def __init__(self, model, ema_model, num_classes, alpha=0.999):
         self.model = model
         self.ema_model = ema_model
         self.alpha = alpha
-        self.tmp_model = models.WideResNet(num_classes=80).cuda()
+        self.tmp_model = models.WideResNet(num_classes=num_classes).cuda()
         self.wd = 0.02 * args.lr
 
         for param, ema_param in zip(self.model.parameters(), self.ema_model.parameters()):
@@ -410,7 +429,6 @@ def interleave_offsets(batch, nu):
         offsets.append(offsets[-1] + g)
     assert offsets[-1] == batch
     return offsets
-
 
 def interleave(xy, batch):
     nu = len(xy) - 1

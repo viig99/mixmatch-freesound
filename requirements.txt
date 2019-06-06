@@ -1,0 +1,6 @@
+pytorch_toolbelt
+librosa
+tensorboardX
+pandas
+sklearn
+SpecAugment
