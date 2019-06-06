@@ -29,7 +29,7 @@ class LoadAudio(object):
         data = {'path': path}
         if path:
             samples, sample_rate = librosa.load(path, self.sample_rate)
-            samples, _ = librosa.effects.trim(samples)
+            # samples, _ = librosa.effects.trim(samples)
         else:
             # silence
             sample_rate = self.sample_rate
