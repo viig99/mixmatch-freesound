@@ -15,7 +15,7 @@ from timeit import default_timer as timer
 from tqdm import tqdm
 from utils.eval import lwlrap_accumulator
 
-def should_apply_transform(prob=0.5):
+def should_apply_transform(prob=0.3):
     """Transforms are only randomly applied with the given probability."""
     return random.random() < prob
 
@@ -29,7 +29,7 @@ class LoadAudio(object):
         data = {'path': path}
         if path:
             samples, sample_rate = librosa.load(path, self.sample_rate)
-            # samples, _ = librosa.effects.trim(samples)
+            samples, _ = librosa.effects.trim(samples)
         else:
             # silence
             sample_rate = self.sample_rate
@@ -444,11 +444,11 @@ pickle.dump(model_vals, open('result/weights.pk', 'wb'))
 '''
 
 # GPU Server
-test_path = os.path.abspath('/tts_data/split_train_curated/split_train_curated/dev')
+test_path = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated')
 model_path = os.path.abspath('result/weights_noisy_mixmatch.pk')
 sample_submission_file = 'submission/submission_split_train_dev.csv'
 lb_path = os.path.abspath('submission/lb.pk')
-correct_answers = os.path.abspath('/tts_data/split_train_curated/split_train_curated/train_curated.csv_dev')
+correct_answers = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_dev')
 df = pd.read_csv(correct_answers)
 
 batch_size = 8
@@ -494,4 +494,4 @@ with torch.no_grad():
     print("Time taken per example on cpu was {:.4f} seconds".format(time_taken / len(file_paths)))
     print("LRAP for test set was {:.4f}".format(lwlrap_acc.overall_lwlrap()))
     df = pd.DataFrame(result, columns=result_header)
-    df.to_csv(sample_submission_file, index=False)
+    # df.to_csv(sample_submission_file, index=False)

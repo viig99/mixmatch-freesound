@@ -4,3 +4,4 @@ tensorboardX
 pandas
 sklearn
 SpecAugment
+progress
