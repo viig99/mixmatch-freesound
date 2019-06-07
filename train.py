@@ -54,7 +54,7 @@ parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.75, type=float)
 parser.add_argument('--lambda-u', default=1, type=float)
-parser.add_argument('--rampup-length', default=22, type=float)
+parser.add_argument('--rampup-length', default=10, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 

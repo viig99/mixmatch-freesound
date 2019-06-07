@@ -145,6 +145,6 @@ class ToPCEN(object):
         sample_rate = data['sample_rate']
         n_fft = data['n_fft']
         hop_length = data['hop_length']
-        pcen = librosa.core.pcen(stft, sr=sample_rate, hop_length=hop_length)
+        pcen = librosa.core.pcen(np.abs(stft), sr=sample_rate, hop_length=hop_length)
         data['pcen'] = pcen
         return data

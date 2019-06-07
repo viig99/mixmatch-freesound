@@ -72,7 +72,7 @@ def get_freesound(only_valid=False):
 
     data_aug_transform = Compose([ChangeAmplitude(), ChangeSpeedAndPitchAudio(), FixAudioLength(30), ToSTFT(), StretchAudioOnSTFT(), TimeshiftAudioOnSTFT(), FixSTFTDimension()])
     train_feature_transform = Compose([ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), SpecAugmentOnMel(), ToTensor(['mel_spectrogram', 'pcen'])])
-    valid_feature_transform = Compose([ToSTFT(), ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), ToTensor(['mel_spectrogram', 'pcen'])])
+    valid_feature_transform = Compose([ToSTFT(), ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor(['mel_spectrogram', 'pcen'])])
 
     train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform])
     valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])

@@ -79,10 +79,10 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-        x1, x2 = x1, x2 = torch.split(x, [80, x.shape[1] - 80], dim=1)
+        x1, x2 = torch.split(x, [80, x.shape[2] - 80], dim=2)
         out1 = self.conv1(x1)
         out2 = self.conv2(x2)
-        out = torch.cat([out1, out2], 1)
+        out = torch.cat([out1, out2], 2)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
