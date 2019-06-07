@@ -33,7 +33,7 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=24, type=int, metavar='N',
+parser.add_argument('--batch-size', default=8, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')

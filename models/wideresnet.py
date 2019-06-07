@@ -44,7 +44,7 @@ class NetworkBlock(nn.Module):
         return self.layer(x)
 
 class WideResNet(nn.Module):
-    def __init__(self, num_classes, depth=28, widen_factor=4, dropRate=0.1):
+    def __init__(self, num_classes, depth=28, widen_factor=2, dropRate=0.1):
         super(WideResNet, self).__init__()
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert((depth - 4) % 6 == 0)
@@ -55,8 +55,9 @@ class WideResNet(nn.Module):
                                padding=1, bias=False)
         self.conv2 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
+        self.pool_conv2 = nn.AvgPool2d(1, stride=(4,1))
         # 1st block
-        self.block1 = NetworkBlock(n, 2 * nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
+        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
         # 2nd block
         self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
         # 3rd block
@@ -66,6 +67,7 @@ class WideResNet(nn.Module):
         self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.fc = nn.Linear(nChannels[3], num_classes)
         self.nChannels = nChannels[3]
+        self.pool = nn.AdaptiveAvgPool2d(1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -82,11 +84,12 @@ class WideResNet(nn.Module):
         x1, x2 = torch.split(x, [80, x.shape[2] - 80], dim=2)
         out1 = self.conv1(x1)
         out2 = self.conv2(x2)
+        out2 = self.pool_conv2(out2)
         out = torch.cat([out1, out2], 2)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
         out = self.relu(self.bn1(out))
-        out = F.adaptive_avg_pool2d(out, 1)
+        out = self.pool(out)
         out = out.view(-1, self.nChannels)
         return self.fc(out)
