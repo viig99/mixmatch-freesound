@@ -71,8 +71,8 @@ def get_freesound(only_valid=False):
     pos_weights = torch.from_numpy(((train_class_labels.shape[0] - train_class_labels.sum(axis=0)) / train_class_labels.sum(axis=0)).astype(np.float32))
 
     data_aug_transform = Compose([ChangeAmplitude(), ChangeSpeedAndPitchAudio(), FixAudioLength(30), ToSTFT(), StretchAudioOnSTFT(), TimeshiftAudioOnSTFT(), FixSTFTDimension()])
-    train_feature_transform = Compose([ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), SpecAugmentOnMel(), ToTensor('mel_spectrogram')])
-    valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
+    train_feature_transform = Compose([ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), SpecAugmentOnMel(), ToTensor(['mel_spectrogram', 'pcen'])])
+    valid_feature_transform = Compose([ToSTFT(), ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), ToTensor(['mel_spectrogram', 'pcen'])])
 
     train_transforms = Compose([LoadAudio(), data_aug_transform, train_feature_transform])
     valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])

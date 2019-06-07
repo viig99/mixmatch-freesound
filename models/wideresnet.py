@@ -53,8 +53,10 @@ class WideResNet(nn.Module):
         # 1st conv before any network block
         self.conv1 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
+        self.conv2 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
+                               padding=1, bias=False)
         # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
+        self.block1 = NetworkBlock(n, 2 * nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
         # 2nd block
         self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
         # 3rd block
@@ -77,7 +79,10 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-        out = self.conv1(x)
+        x1, x2 = x1, x2 = torch.split(x, [80, x.shape[1] - 80], dim=1)
+        out1 = self.conv1(x1)
+        out2 = self.conv2(x2)
+        out = torch.cat([out1, out2], 1)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)

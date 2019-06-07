@@ -137,3 +137,14 @@ class AudioFromSTFT(object):
         stft = data['stft']
         data['istft_samples'] = librosa.core.istft(stft, dtype=data['samples'].dtype)
         return data
+
+class ToPCEN(object):
+
+    def __call__(self, data):
+        stft = data['stft']
+        sample_rate = data['sample_rate']
+        n_fft = data['n_fft']
+        hop_length = data['hop_length']
+        pcen = librosa.core.pcen(stft, sr=sample_rate, hop_length=hop_length)
+        data['pcen'] = pcen
+        return data

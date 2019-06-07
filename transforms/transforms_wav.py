@@ -153,12 +153,12 @@ class ToMelSpectrogram(object):
 class ToTensor(object):
     """Converts into a tensor."""
 
-    def __init__(self, np_name, normalize=None):
-        self.np_name = np_name
+    def __init__(self, np_names, normalize=None):
+        self.np_names = np_names
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = data[self.np_name].astype(np.float32)
+        tensor = np.vstack([data[name].astype(np.float32) for name in self.np_names]).astype(np.float32)
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean

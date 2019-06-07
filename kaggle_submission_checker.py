@@ -160,12 +160,12 @@ class ToMelSpectrogram(object):
 class ToTensor(object):
     """Converts into a tensor."""
 
-    def __init__(self, np_name, normalize=None):
-        self.np_name = np_name
+    def __init__(self, np_names, normalize=None):
+        self.np_names = np_names
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = data[self.np_name].astype(np.float32)
+        tensor = np.vstack([data[name].astype(np.float32) for name in self.np_names]).astype(np.float32)
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean
@@ -298,6 +298,17 @@ class AudioFromSTFT(object):
         data['istft_samples'] = librosa.core.istft(stft, dtype=data['samples'].dtype)
         return data
 
+class ToPCEN(object):
+
+    def __call__(self, data):
+        stft = data['stft']
+        sample_rate = data['sample_rate']
+        n_fft = data['n_fft']
+        hop_length = data['hop_length']
+        pcen = librosa.core.pcen(np.abs(stft), sr=sample_rate, hop_length=hop_length)
+        data['pcen'] = pcen
+        return data
+
 class Freesound_labelled(Dataset):
     def __init__(self, files, labels, lb, transform=None):
         self.files = files
@@ -368,8 +379,10 @@ class WideResNet(nn.Module):
         # 1st conv before any network block
         self.conv1 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
+        self.conv2 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
+                               padding=1, bias=False)
         # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
+        self.block1 = NetworkBlock(n, 2 * nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
         # 2nd block
         self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
         # 3rd block
@@ -392,7 +405,10 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-        out = self.conv1(x)
+        x1, x2 = torch.split(x, [80, 1025], dim=1)
+        out1 = self.conv1(x1)
+        out2 = self.conv2(x2)
+        out = torch.cat([out1, out2], 1)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
@@ -444,55 +460,56 @@ pickle.dump(model_vals, open('result/weights_noisy_mixmatch.pk', 'wb'))
 '''
 
 # GPU Server
-test_path = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated')
-model_path = os.path.abspath('result/weights_noisy_mixmatch.pk')
-sample_submission_file = 'submission/submission_split_train_dev.csv'
-lb_path = os.path.abspath('submission/lb.pk')
-correct_answers_1 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_dev')
-correct_answers_2 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_test')
-df = pd.concat([pd.read_csv(correct_answers_1), pd.read_csv(correct_answers_2)])
+if __name__ == "__main__": 
+    test_path = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated')
+    model_path = os.path.abspath('result/weights_noisy_mixmatch.pk')
+    sample_submission_file = 'submission/submission_split_train_dev.csv'
+    lb_path = os.path.abspath('submission/lb.pk')
+    correct_answers_1 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_dev')
+    correct_answers_2 = os.path.abspath('/tts_data/kaggle/freesound/data/train_curated.csv_test')
+    df = pd.concat([pd.read_csv(correct_answers_1), pd.read_csv(correct_answers_2)])
 
-batch_size = 8
+    batch_size = 8
 
-lb = pickle.load(open(lb_path, 'rb'))
-correct_labels = [labels.split(',') for labels in df['labels'].values]
+    lb = pickle.load(open(lb_path, 'rb'))
+    correct_labels = [labels.split(',') for labels in df['labels'].values]
 
-# file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
-file_paths = [os.path.join(test_path, file) for file in df['fname'].values]
-valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
-valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
+    # file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
+    file_paths = [os.path.join(test_path, file) for file in df['fname'].values]
+    valid_feature_transform = Compose([ToSTFT(), ToMelSpectrogramFromSTFT(n_mels=80), ToTensor('mel_spectrogram')])
+    valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
-val_dataset = Freesound_labelled(file_paths, correct_labels, lb, transform=valid_transforms)
-val_loader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=max(1, os.cpu_count() - 2), collate_fn=collate_fn)
+    val_dataset = Freesound_labelled(file_paths, correct_labels, lb, transform=valid_transforms)
+    val_loader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=max(1, os.cpu_count() - 2), collate_fn=collate_fn)
 
-print('Loaded dataset')
-model = create_model(ema=True)
-best_model_state_dict = pickle.load(open(model_path, 'rb'))
-model.load_state_dict(load_state_dict(model, best_model_state_dict))
-print('Loaded Model')
-model.eval()
-if torch.cuda.is_available():
-    model = model.cuda()
+    print('Loaded dataset')
+    model = create_model(ema=True)
+    best_model_state_dict = pickle.load(open(model_path, 'rb'))
+    model.load_state_dict(load_state_dict(model, best_model_state_dict))
+    print('Loaded Model')
+    model.eval()
+    if torch.cuda.is_available():
+        model = model.cuda()
 
-result = []
-result_header = ['fname', *lb.classes_]
-lwlrap_acc = lwlrap_accumulator()
+    result = []
+    result_header = ['fname', *lb.classes_]
+    lwlrap_acc = lwlrap_accumulator()
 
-with torch.no_grad():
-    start_time = timer()
-    for batch_idx, (inputs, targets) in enumerate(tqdm(val_loader)):
-        if torch.cuda.is_available():
-            inputs = inputs.cuda()
-        outputs = model(inputs)
-        lwlrap_acc.accumulate_samples(targets, outputs)
-        probs = torch.sigmoid(outputs).cpu().numpy().tolist()
-        filenames = [os.path.basename(file) for file in np.array(val_dataset.files)[batch_size * batch_idx:batch_size * (batch_idx+1)].tolist()]
-        for fname, prob in zip(filenames, probs):
-            result.append([fname, *prob])
-        print('Num of examples done {:d}'.format(batch_idx * batch_size))
-    time_taken = timer() - start_time
-    print('Total time taken was {:.4f} seconds'.format(time_taken))
-    print("Time taken per example on cpu was {:.4f} seconds".format(time_taken / len(file_paths)))
-    print("LRAP for test set was {:.4f}".format(lwlrap_acc.overall_lwlrap()))
-    df = pd.DataFrame(result, columns=result_header)
-    df.to_csv(sample_submission_file, index=False)
+    with torch.no_grad():
+        start_time = timer()
+        for batch_idx, (inputs, targets) in enumerate(tqdm(val_loader)):
+            if torch.cuda.is_available():
+                inputs = inputs.cuda()
+            outputs = model(inputs)
+            lwlrap_acc.accumulate_samples(targets, outputs)
+            probs = torch.sigmoid(outputs).cpu().numpy().tolist()
+            filenames = [os.path.basename(file) for file in np.array(val_dataset.files)[batch_size * batch_idx:batch_size * (batch_idx+1)].tolist()]
+            for fname, prob in zip(filenames, probs):
+                result.append([fname, *prob])
+            print('Num of examples done {:d}'.format(batch_idx * batch_size))
+        time_taken = timer() - start_time
+        print('Total time taken was {:.4f} seconds'.format(time_taken))
+        print("Time taken per example on cpu was {:.4f} seconds".format(time_taken / len(file_paths)))
+        print("LRAP for test set was {:.4f}".format(lwlrap_acc.overall_lwlrap()))
+        df = pd.DataFrame(result, columns=result_header)
+        df.to_csv(sample_submission_file, index=False)
