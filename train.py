@@ -35,7 +35,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--batch-size', default=8, type=int, metavar='N',
                     help='train batchsize')
-parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.005, type=float,
                     metavar='LR', help='initial learning rate')
 # Checkpoints
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -52,11 +52,14 @@ parser.add_argument('--val-iteration', type=int, default=1024,
                         help='Number of labeled data')
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
-parser.add_argument('--alpha', default=0.75, type=float)
-parser.add_argument('--lambda-u', default=1, type=float)
-parser.add_argument('--rampup-length', default=10, type=float)
+parser.add_argument('--alpha', default=0.6, type=float)
+parser.add_argument('--rampup-length', default=0, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
+parser.add_argument('--num_cpu', default=os.cpu_count() - 2, type=int)
+parser.add_argument('--lambda_bc', default=40.0, type=float)
+parser.add_argument('--lambda_m', default=10.0, type=float)
+parser.add_argument('--lambda_n', default=1.0, type=float)
 
 
 args = parser.parse_args()
@@ -86,11 +89,11 @@ def main():
     print(f'==> Preparing freesound')
 
     train_labeled_set, train_unlabeled_set, val_set, test_set, train_unlabeled_warmstart_set, num_classes, pos_weights = dataset.get_freesound()
-    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn, pin_memory=True)
-    noisy_train_loader = data.DataLoader(train_unlabeled_warmstart_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn)
-    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=os.cpu_count() - 1, drop_last=True, collate_fn=dataset.collate_fn_unlabbelled)
-    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn, pin_memory=True)
-    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=os.cpu_count() - 1, collate_fn=dataset.collate_fn, pin_memory=True)
+    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=args.num_cpu, drop_last=True, collate_fn=dataset.collate_fn, pin_memory=True)
+    noisy_train_loader = data.DataLoader(train_unlabeled_warmstart_set, batch_size=args.batch_size, shuffle=True, num_workers=args.num_cpu, drop_last=True, collate_fn=dataset.collate_fn)
+    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=args.num_cpu, drop_last=True, collate_fn=dataset.collate_fn_unlabbelled)
+    val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_cpu, collate_fn=dataset.collate_fn, pin_memory=True)
+    test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_cpu, collate_fn=dataset.collate_fn, pin_memory=True)
 
     # Model
     print("==> creating WRN-28-4")
@@ -111,10 +114,11 @@ def main():
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
     bce_loss = L.BinaryFocalLoss()
-    train_criterion = SemiLoss(bce_loss, args.lambda_u)
+    train_criterion = SemiLoss(bce_loss)
+    noisy_criterion = NoisyLoss()
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=1e-6)
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', patience=10, verbose=True, threshold=1e-3, cooldown=10, min_lr=2e-6)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=10, verbose=True, threshold=1e-3, cooldown=10, min_lr=2e-6)
 
     # load_checkpoint(model, ema_model, optimizer)
 
@@ -137,7 +141,7 @@ def main():
         logger = Logger(os.path.join('/tts_data/kaggle/mixmatch/MixMatch-pytorch/result', 'log.txt'), title=title, resume=True)
     else:
         logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
-        logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U',  'Valid Loss', 'Valid Acc.', 'Test Loss', 'Test Acc.'])
+        logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U',  'Train Loss N', 'Train Acc.', 'Valid Loss', 'Valid Acc.', 'Test Loss', 'Test Acc.'])
 
     writer = SummaryWriter(args.out)
     step = 0
@@ -145,7 +149,9 @@ def main():
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-        train_loss, train_loss_x, train_loss_u = train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model, optimizer, ema_optimizer, train_criterion, epoch, use_cuda)
+        train_loss, train_loss_x, train_loss_u, train_loss_n = train(labeled_trainloader, 
+            unlabeled_trainloader, noisy_train_loader, model, optimizer, 
+            ema_optimizer, train_criterion, noisy_criterion, epoch, use_cuda)
         _, train_acc = validate(labeled_trainloader, ema_model, criterion, epoch, use_cuda, mode='Train Stats')
         val_loss, val_acc = validate(val_loader, ema_model, criterion, epoch, use_cuda, mode='Valid Stats')
         test_loss, test_acc = validate(test_loader, ema_model, criterion, epoch, use_cuda, mode='Test Stats ')
@@ -160,10 +166,10 @@ def main():
         writer.add_scalar('accuracy/val_acc', val_acc, step)
         writer.add_scalar('accuracy/test_acc', test_acc, step)
         
-        scheduler.step(val_acc)
+        scheduler.step(test_loss)
 
         # append logger file
-        logger.append([train_loss, train_loss_x, train_loss_u, val_loss, val_acc, test_loss, test_acc])
+        logger.append([train_loss, train_loss_x, train_loss_u, train_loss_n, train_acc, val_loss, val_acc, test_loss, test_acc])
 
         # save model
         is_best = val_acc > best_acc
@@ -187,7 +193,7 @@ def main():
     print(np.mean(test_accs[-20:]))
 
 
-def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model, optimizer, ema_optimizer, criterion, epoch, use_cuda):
+def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model, optimizer, ema_optimizer, criterion, noisy_criterion, epoch, use_cuda):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -241,11 +247,9 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
         with torch.no_grad():
             outputs_u = model(inputs_u)
             outputs_u2 = model(inputs_u2)
-            outputs_n = model(inputs_n)
             p = (torch.sigmoid(outputs_u) + torch.sigmoid(outputs_u2)) / 2
             targets_u = torch.sigmoid((p - 0.5) * args.T)
             targets_u = targets_u.detach()
-            targets_n = targets_n.detach()
 
         # mixup
         all_inputs = torch.cat([inputs_x, inputs_u, inputs_u2], dim=0)
@@ -270,21 +274,23 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
         logits = [model(mixed_input[0])]
         for input in mixed_input[1:]:
             logits.append(model(input))
+        outputs_n = model(inputs_n)
 
         # put interleaved samples back
         logits = interleave(logits, batch_size)
         logits_x = logits[0]
         logits_u = torch.cat(logits[1:], dim=0)
 
-        Lx, Lu, Ln, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], outputs_n, targets_n, epoch+batch_idx/args.val_iteration)
+        Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+batch_idx/args.val_iteration)
+        loss_noisy = noisy_criterion(outputs_n, targets_n)
 
-        loss = Lx + (w * Lu) + (w * Ln)
+        loss = args.lambda_bc * Lx + (args.lambda_m * w * Lu) + (args.lambda_n * w * loss_noisy)
 
         # record loss
         losses.update(loss.item(), inputs_x.size(0))
-        losses_x.update(Lx.item(), inputs_x.size(0))
-        losses_u.update(Lu.item(), inputs_x.size(0))
-        losses_n.update(Ln.item(), inputs_x.size(0))
+        losses_x.update(args.lambda_bc * Lx.item(), inputs_x.size(0))
+        losses_u.update(args.lambda_m * w * Lu.item(), inputs_x.size(0))
+        losses_n.update(args.lambda_n * w * loss_noisy.item(), inputs_n.size(0))
         ws.update(w, inputs_x.size(0))
 
         # compute gradient and do SGD step
@@ -316,7 +322,7 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
 
     ema_optimizer.step(bn=True)
 
-    return (losses.avg, losses_x.avg, losses_u.avg,)
+    return (losses.avg, losses_x.avg, losses_u.avg, losses_n.avg)
 
 def validate(valloader, model, criterion, epoch, use_cuda, mode):
 
@@ -381,15 +387,21 @@ def linear_rampup(current, rampup_length=args.rampup_length):
         return float(current)
 
 class SemiLoss(object):
-    def __init__(self, criterion, lambda_u):
+    def __init__(self, criterion):
         self.criterion = criterion
-        self.lambda_u = lambda_u
 
-    def __call__(self, outputs_x, targets_x, outputs_u, targets_u, outputs_n, targets_n, epoch):
+    def __call__(self, outputs_x, targets_x, outputs_u, targets_u, epoch):
         Lx = self.criterion(outputs_x, targets_x)
         Lu = torch.mean((torch.sigmoid(outputs_u) - targets_u)**2)
-        Ln = torch.mean((targets_n - (targets_n * torch.sigmoid(outputs_n)) ** 0.7) / 0.7)
-        return Lx, Lu, Ln, self.lambda_u * linear_rampup(epoch)
+        return Lx, Lu, linear_rampup(epoch)
+
+class NoisyLoss(object):
+    def __init__(self):
+        self.ls = torch.nn.LogSigmoid()
+
+    def __call__(self, outputs_n, targets_n):
+        Ln = -torch.mean(torch.sum((targets_n * self.ls(outputs_n)), dim=1, dtype=torch.float32))
+        return Ln
 
 class WeightEMA(object):
     def __init__(self, model, ema_model, num_classes, alpha=0.999):

@@ -14,7 +14,7 @@ import torch.utils.data as data
 from timeit import default_timer as timer
 from tqdm import tqdm
 
-def should_apply_transform(prob=0.5):
+def should_apply_transform(prob=0.3):
     """Transforms are only randomly applied with the given probability."""
     return random.random() < prob
 
@@ -158,12 +158,12 @@ class ToMelSpectrogram(object):
 class ToTensor(object):
     """Converts into a tensor."""
 
-    def __init__(self, np_name, normalize=None):
-        self.np_name = np_name
+    def __init__(self, np_names, normalize=None):
+        self.np_names = np_names
         self.normalize = normalize
 
     def __call__(self, data):
-        tensor = data[self.np_name].astype(np.float32)
+        tensor = np.vstack([data[name].astype(np.float32) for name in self.np_names]).astype(np.float32)
         if self.normalize is not None:
             mean, std = self.normalize
             tensor -= mean
@@ -296,6 +296,17 @@ class AudioFromSTFT(object):
         data['istft_samples'] = librosa.core.istft(stft, dtype=data['samples'].dtype)
         return data
 
+class ToPCEN(object):
+
+    def __call__(self, data):
+        stft = data['stft']
+        sample_rate = data['sample_rate']
+        n_fft = data['n_fft']
+        hop_length = data['hop_length']
+        pcen = librosa.core.pcen(np.abs(stft), sr=sample_rate, hop_length=hop_length)
+        data['pcen'] = pcen
+        return data
+
 class Freesound_labelled(Dataset):
     def __init__(self, files, labels, lb, transform=None):
         self.files = files
@@ -357,7 +368,7 @@ class NetworkBlock(nn.Module):
         return self.layer(x)
 
 class WideResNet(nn.Module):
-    def __init__(self, num_classes, depth=28, widen_factor=4, dropRate=0.1):
+    def __init__(self, num_classes, depth=28, widen_factor=2, dropRate=0.1):
         super(WideResNet, self).__init__()
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert((depth - 4) % 6 == 0)
@@ -366,6 +377,9 @@ class WideResNet(nn.Module):
         # 1st conv before any network block
         self.conv1 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
+        self.conv2 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
+                               padding=1, bias=False)
+        self.pool_conv2 = nn.AvgPool2d(1, stride=(4,1))
         # 1st block
         self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
         # 2nd block
@@ -377,6 +391,7 @@ class WideResNet(nn.Module):
         self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.fc = nn.Linear(nChannels[3], num_classes)
         self.nChannels = nChannels[3]
+        self.pool = nn.AdaptiveAvgPool2d(1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -390,12 +405,16 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-        out = self.conv1(x)
+        x1, x2 = torch.split(x, [80, x.shape[2] - 80], dim=2)
+        out1 = self.conv1(x1)
+        out2 = self.conv2(x2)
+        out2 = self.pool_conv2(out2)
+        out = torch.cat([out1, out2], 2)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
         out = self.relu(self.bn1(out))
-        out = F.adaptive_avg_pool2d(out, 1)
+        out = self.pool(out)
         out = out.view(-1, self.nChannels)
         return self.fc(out)
 
@@ -423,7 +442,7 @@ def collate_fn(batch):
 
 # Kaggle
 test_path = os.path.abspath('../input/freesound-audio-tagging-2019/test')
-model_path = os.path.abspath('../input/freesound2/weights_noisy_mixmatch.pk')
+model_path = os.path.abspath('../input/freesound-dual-input/weights_noisy_mixmatch_dual_input.pk')
 sample_submission_file = 'submission.csv'
 lb_path = os.path.abspath('../input/freesound2/lb.pk')
 
@@ -436,7 +455,7 @@ lb_path = os.path.abspath('../input/freesound2/lb.pk')
 '''
 import torch
 import pickle
-model_vals = torch.load('result/model_best.pth.tar', map_location='cpu')['ema_state_dict']
+model_vals = torch.load('result/checkpoints/checkpoint_89.pth.tar', map_location='cpu')['ema_state_dict']
 pickle.dump(model_vals, open('result/weights_noisy_mixmatch.pk', 'wb'))
 '''
 
@@ -451,7 +470,7 @@ batch_size = 8
 lb = pickle.load(open(lb_path, 'rb'))
 
 file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
-valid_feature_transform = Compose([ToMelSpectrogram(n_mels=80), ToTensor('mel_spectrogram')])
+valid_feature_transform = Compose([ToSTFT(), ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor(['mel_spectrogram', 'pcen'])])
 valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
 val_dataset = Freesound_labelled(file_paths, None, lb, transform=valid_transforms)

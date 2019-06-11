@@ -59,9 +59,8 @@ if __name__ == "__main__":
     lb = pickle.load(open(lb_path, 'rb'))
     correct_labels = [labels.split(',') for labels in df['labels'].values]
 
-    # file_paths = [os.path.join(test_path, file) for file in os.listdir(test_path)]
     file_paths = [os.path.join(test_path, file) for file in df['fname'].values]
-    valid_feature_transform = Compose([ToSTFT(), ToMelSpectrogramFromSTFT(n_mels=80), ToTensor('mel_spectrogram')])
+    valid_feature_transform = Compose([ToSTFT(), ToPCEN(), ToMelSpectrogramFromSTFT(n_mels=80), DeleteSTFT(), ToTensor(['mel_spectrogram', 'pcen'])])
     valid_transforms = Compose([LoadAudio(), FixAudioLength(30), valid_feature_transform])
 
     val_dataset = Freesound_labelled(file_paths, correct_labels, lb, transform=valid_transforms)
@@ -87,7 +86,6 @@ if __name__ == "__main__":
                 inputs = inputs.cuda()
             outputs = model(inputs)
             lwlrap_acc.accumulate_samples(targets, outputs)
-            probs = torch.sigmoid(outputs).cpu().numpy().tolist()
             filenames = [os.path.basename(file) for file in np.array(val_dataset.files)[batch_size * batch_idx:batch_size * (batch_idx+1)].tolist()]
             for fname, prob in zip(filenames, probs):
                 result.append([fname, *prob])
