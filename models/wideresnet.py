@@ -50,24 +50,25 @@ class WideResNet(nn.Module):
         assert((depth - 4) % 6 == 0)
         n = (depth - 4) // 6
         block = BasicBlock
-        # 1st conv before any network block
-        self.conv1 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
-                               padding=1, bias=False)
-        self.conv2 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
-                               padding=1, bias=False)
-        self.pool_conv2 = nn.AvgPool2d(1, stride=(4,1))
-        # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True)
-        # 2nd block
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
-        # 3rd block
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
-        # global average pooling and classifier
-        self.bn1 = nn.BatchNorm2d(nChannels[3], momentum=0.001)
-        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
-        self.fc = nn.Linear(nChannels[3], num_classes)
-        self.nChannels = nChannels[3]
-        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.nChannels = 2 * nChannels[3]
+        self.route1 = nn.Sequential(nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
+                               padding=1, bias=False),
+                               NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True), 
+                            NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate), 
+                            NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate), 
+                            nn.BatchNorm2d(nChannels[3], momentum=0.001), 
+                            nn.LeakyReLU(negative_slope=0.1, inplace=True), 
+                            nn.AdaptiveAvgPool2d(1))
+        self.route2 = nn.Sequential(nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
+                               padding=1, bias=False),
+                            nn.AvgPool2d(1, stride=(6,1)),
+                            NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True), 
+                            NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate), 
+                            NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate), 
+                            nn.BatchNorm2d(nChannels[3], momentum=0.001), 
+                            nn.LeakyReLU(negative_slope=0.1, inplace=True), 
+                            nn.AdaptiveAvgPool2d(1))
+        self.fc = nn.Linear(self.nChannels, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -82,14 +83,8 @@ class WideResNet(nn.Module):
 
     def forward(self, x):
         x1, x2 = torch.split(x, [80, x.shape[2] - 80], dim=2)
-        out1 = self.conv1(x1)
-        out2 = self.conv2(x2)
-        out2 = self.pool_conv2(out2)
-        out = torch.cat([out1, out2], 2)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
-        out = self.pool(out)
+        out1 = self.route1(x1)
+        out2 = self.route2(x2)
+        out = torch.cat([out1, out2], dim=1)
         out = out.view(-1, self.nChannels)
         return self.fc(out)

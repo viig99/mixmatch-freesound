@@ -32,9 +32,9 @@ parser.add_argument('--epochs', default=1024, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=8, type=int, metavar='N',
+parser.add_argument('--batch-size', default=3*4, type=int, metavar='N',
                     help='train batchsize')
-parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate')
 # Checkpoints
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -52,13 +52,13 @@ parser.add_argument('--val-iteration', type=int, default=1024,
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.6, type=float)
-parser.add_argument('--rampup-length', default=0, type=float)
+parser.add_argument('--rampup-length', default=30, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
-parser.add_argument('--num_cpu', default=os.cpu_count() - 2, type=int)
-parser.add_argument('--lambda_bc', default=1.7, type=float)
+parser.add_argument('--num_cpu', default=os.cpu_count() - 4, type=int)
+parser.add_argument('--lambda_bc', default=2.0, type=float)
 parser.add_argument('--lambda_m', default=1.0, type=float)
-parser.add_argument('--lambda_n', default=0.28, type=float)
+parser.add_argument('--lambda_n', default=0.25, type=float)
 
 
 args = parser.parse_args()
@@ -206,6 +206,7 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
     
     model.train()
     for batch_idx in range(size):
+        optimizer.zero_grad()
         try:
             inputs_x, targets_x = labeled_train_iter.next()
         except:
@@ -272,10 +273,10 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
         logits_x = logits[0]
         logits_u = torch.cat(logits[1:], dim=0)
 
-        Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+batch_idx/args.val_iteration)
+        Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+(batch_idx/args.val_iteration))
         loss_noisy = noisy_criterion(outputs_n, targets_n)
 
-        loss = args.lambda_bc * Lx + (args.lambda_m * w * Lu) + (args.lambda_n * w * loss_noisy)
+        loss = (args.lambda_bc * Lx) + (args.lambda_m * w * Lu) + (args.lambda_n * w * loss_noisy)
 
         # record loss
         losses.update(loss.item(), inputs_x.size(0))
@@ -285,7 +286,6 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
         ws.update(w, inputs_x.size(0))
 
         # compute gradient and do SGD step
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         ema_optimizer.step()
@@ -374,7 +374,7 @@ def linear_rampup(current, rampup_length=args.rampup_length):
     if rampup_length == 0:
         return 1.0
     else:
-        current = np.clip((current / rampup_length) - 0.5, 0.0, 1.0)
+        current = np.clip((current / rampup_length), 0.0, 1.0)
         return float(current)
 
 class SemiLoss(object):
