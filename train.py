@@ -52,13 +52,13 @@ parser.add_argument('--val-iteration', type=int, default=1024,
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.6, type=float)
-parser.add_argument('--rampup-length', default=30, type=float)
+parser.add_argument('--rampup-length', default=20, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 parser.add_argument('--num_cpu', default=os.cpu_count() - 4, type=int)
 parser.add_argument('--lambda_bc', default=2.0, type=float)
 parser.add_argument('--lambda_m', default=1.0, type=float)
-parser.add_argument('--lambda_n', default=0.25, type=float)
+parser.add_argument('--lambda_n', default=0.1, type=float)
 
 
 args = parser.parse_args()
@@ -276,13 +276,13 @@ def train(labeled_trainloader, unlabeled_trainloader, noisy_train_loader, model,
         Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+(batch_idx/args.val_iteration))
         loss_noisy = noisy_criterion(outputs_n, targets_n)
 
-        loss = (args.lambda_bc * Lx) + (args.lambda_m * w * Lu) + (args.lambda_n * w * loss_noisy)
+        loss = (args.lambda_bc * Lx) + (args.lambda_m * w * Lu) + (args.lambda_n * loss_noisy)
 
         # record loss
         losses.update(loss.item(), inputs_x.size(0))
         losses_x.update(args.lambda_bc * Lx.item(), inputs_x.size(0))
         losses_u.update(args.lambda_m * w * Lu.item(), inputs_x.size(0))
-        losses_n.update(args.lambda_n * w * loss_noisy.item(), inputs_n.size(0))
+        losses_n.update(args.lambda_n * loss_noisy.item(), inputs_n.size(0))
         ws.update(w, inputs_x.size(0))
 
         # compute gradient and do SGD step
@@ -391,7 +391,7 @@ class NoisyLoss(object):
         self.ls = torch.nn.LogSigmoid()
 
     def __call__(self, outputs_n, targets_n):
-        Ln = -torch.mean(torch.sum((targets_n * self.ls(outputs_n)), dim=1, dtype=torch.float32))
+        Ln = -torch.mean(torch.sum(targets_n * self.ls(outputs_n), dim=1, dtype=torch.float32))
         return Ln
 
 class WeightEMA(object):
