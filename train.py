@@ -35,7 +35,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--batch-size', default=8, type=int, metavar='N',
                     help='train batchsize')
-parser.add_argument('--lr', '--learning-rate', default=0.005, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate')
 # Checkpoints
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -57,9 +57,9 @@ parser.add_argument('--rampup-length', default=0, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 parser.add_argument('--num_cpu', default=os.cpu_count() - 2, type=int)
-parser.add_argument('--lambda_bc', default=40.0, type=float)
-parser.add_argument('--lambda_m', default=10.0, type=float)
-parser.add_argument('--lambda_n', default=1.0, type=float)
+parser.add_argument('--lambda_bc', default=4.0, type=float)
+parser.add_argument('--lambda_m', default=1.0, type=float)
+parser.add_argument('--lambda_n', default=0.1, type=float)
 
 
 args = parser.parse_args()
