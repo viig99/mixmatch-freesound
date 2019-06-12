@@ -57,9 +57,9 @@ parser.add_argument('--rampup-length', default=0, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 parser.add_argument('--num_cpu', default=os.cpu_count() - 2, type=int)
-parser.add_argument('--lambda_bc', default=2.0, type=float)
+parser.add_argument('--lambda_bc', default=8.0, type=float)
 parser.add_argument('--lambda_m', default=1.0, type=float)
-parser.add_argument('--lambda_n', default=0.3, type=float)
+parser.add_argument('--lambda_n', default=0.28, type=float)
 
 
 args = parser.parse_args()
