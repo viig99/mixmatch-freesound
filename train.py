@@ -52,13 +52,13 @@ parser.add_argument('--val-iteration', type=int, default=1024,
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
 parser.add_argument('--alpha', default=0.6, type=float)
-parser.add_argument('--rampup-length', default=20, type=float)
+parser.add_argument('--rampup-length', default=30, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 parser.add_argument('--num_cpu', default=os.cpu_count() - 4, type=int)
 parser.add_argument('--lambda_bc', default=2.0, type=float)
 parser.add_argument('--lambda_m', default=1.0, type=float)
-parser.add_argument('--lambda_n', default=0.1, type=float)
+parser.add_argument('--lambda_n', default=0.05, type=float)
 
 
 args = parser.parse_args()
@@ -374,7 +374,7 @@ def linear_rampup(current, rampup_length=args.rampup_length):
     if rampup_length == 0:
         return 1.0
     else:
-        current = np.clip((current / rampup_length), 0.0, 1.0)
+        current = np.clip((current / rampup_length) - 0.5, 0.0, 1.0)
         return float(current)
 
 class SemiLoss(object):
