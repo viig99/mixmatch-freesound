@@ -19,7 +19,6 @@ import torch.optim as optim
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from pytorch_toolbelt import losses as L
 import models.wideresnet as models
 from models.adamw import AdamW
@@ -57,7 +56,7 @@ parser.add_argument('--rampup-length', default=0, type=float)
 parser.add_argument('--T', default=10.0, type=float)
 parser.add_argument('--ema-decay', default=0.999, type=float)
 parser.add_argument('--num_cpu', default=os.cpu_count() - 2, type=int)
-parser.add_argument('--lambda_bc', default=8.0, type=float)
+parser.add_argument('--lambda_bc', default=1.7, type=float)
 parser.add_argument('--lambda_m', default=1.0, type=float)
 parser.add_argument('--lambda_n', default=0.28, type=float)
 
@@ -91,7 +90,7 @@ def main():
     test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_cpu, collate_fn=dataset.collate_fn, pin_memory=True)
 
     # Model
-    print("==> creating WRN-28-4")
+    print("==> creating WRN-28-2")
 
     def create_model(ema=False):
         model = nn.DataParallel(models.WideResNet(num_classes=num_classes))
@@ -109,11 +108,10 @@ def main():
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
     bce_loss = L.BinaryFocalLoss()
-    train_criterion = SemiLoss(bce_loss)
-    noisy_criterion = NoisyLoss()
     criterion = nn.BCEWithLogitsLoss()
+    train_criterion = SemiLoss(criterion)
+    noisy_criterion = NoisyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=1e-6)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=10, verbose=True, threshold=1e-3, cooldown=10, min_lr=2e-6)
 
     # load_checkpoint(model, ema_model, optimizer)
 
@@ -121,7 +119,7 @@ def main():
     start_epoch = 0
 
     # Resume
-    title = 'noisy-cifar-10'
+    title = 'freesound'
     if args.resume:
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
@@ -133,7 +131,7 @@ def main():
         model.load_state_dict(checkpoint['state_dict'])
         ema_model.load_state_dict(checkpoint['ema_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        logger = Logger(os.path.join('/tts_data/kaggle/mixmatch/MixMatch-pytorch/result', 'log.txt'), title=title, resume=True)
+        logger = Logger(os.path.abspath(os.path.join('result', 'log.txt')), title=title, resume=True)
     else:
         logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
         logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U',  'Train Loss N', 'Train Acc.', 'Valid Loss', 'Valid Acc.', 'Test Loss', 'Test Acc.'])
@@ -161,8 +159,6 @@ def main():
         writer.add_scalar('accuracy/val_acc', val_acc, step)
         writer.add_scalar('accuracy/test_acc', test_acc, step)
         
-        scheduler.step(test_loss)
-
         # append logger file
         logger.append([train_loss, train_loss_x, train_loss_u, train_loss_n, train_acc, val_loss, val_acc, test_loss, test_acc])
 
