@@ -1,5 +1,6 @@
-# MixMatch
-This repository tries to solve the multi-label freesound classification using [MixMatch: A Holistic Approach to Semi-Supervised Learning](https://arxiv.org/abs/1905.02249) and [SpecAugment](https://arxiv.org/abs/1904.08779)
+# FreeSound 2019 MixMatch + SpecAugment + Noisy
+This repository tries to solve the multi-label freesound classification using [MixMatch: A Holistic Approach to Semi-Supervised Learning](https://arxiv.org/abs/1905.02249) and [SpecAugment](https://arxiv.org/abs/1904.08779).
+
 Dataset is using the freesound - 2019 kaggle competion.
 
 ## Requirements
@@ -15,7 +16,7 @@ Dataset is using the freesound - 2019 kaggle competion.
 ## Usage
 
 ### Train
-Train the model by 250 labeled data of CIFAR-10 dataset:
+Train the model by using the freesound 2019 curated and noisy data.
 
 ```
 ./train.sh
