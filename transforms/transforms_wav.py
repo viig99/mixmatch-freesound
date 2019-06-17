@@ -9,7 +9,7 @@ import math
 import torch
 from torch.utils.data import Dataset
 
-def should_apply_transform(prob=0.3):
+def should_apply_transform(prob=0.5):
     """Transforms are only randomly applied with the given probability."""
     return random.random() < prob
 
@@ -148,6 +148,19 @@ class ToMelSpectrogram(object):
         sample_rate = data['sample_rate']
         s = librosa.feature.melspectrogram(samples, sr=sample_rate, n_mels=self.n_mels)
         data['mel_spectrogram'] = librosa.power_to_db(s, ref=np.max)
+        return data
+
+class LoadMelSpectrogram(object):
+    """Loads an audio into a numpy array."""
+
+    def __init__(self, sample_rate=16000):
+        self.sample_rate = sample_rate
+
+    def __call__(self, path):
+        path = path.replace('train_curated', 'train_curated_spec').replace('train_noisy', 'train_noisy_spec').replace('wav', 'npy')
+        data = {'path': path}
+        data['mel_spectrogram'] = np.load(path)
+        data['sample_rate'] = self.sample_rate
         return data
 
 class ToTensor(object):

@@ -6,11 +6,11 @@ import random
 
 import numpy as np
 import librosa
-
+import torch
 from torch.utils.data import Dataset
 
 from .transforms_wav import should_apply_transform
-from specAugment import spec_augment_pytorch
+from .spec_augment_utils import spec_augment
 
 class ToSTFT(object):
     """Applies on an audio the short time fourier transform."""
@@ -85,12 +85,22 @@ class AddBackgroundNoiseOnSTFT(Dataset):
         return data
 
 class SpecAugmentOnMel(object):
+    def __init__(self, normalize=None):
+        self.normalize = normalize
+
     def __call__(self, data):
         if not should_apply_transform():
             return data
 
+        tensor = data['mel_spectrogram'].astype(np.float32)
 
-        data['mel_spectrogram'] = spec_augment_pytorch.spec_augment(mel_spectrogram=data['mel_spectrogram'])
+        if self.normalize is not None:
+            mean, std = self.normalize
+            tensor -= mean
+            tensor /= std
+
+        tensor = tensor.swapaxes(1,0)
+        data['mel_spectrogram'] = spec_augment(tensor, max_time_warp=15, max_freq_width=20, max_time_width=70, n_freq_mask=2, n_time_mask=2).swapaxes(1,0)
         return data
 
 class FixSTFTDimension(object):

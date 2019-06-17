@@ -1,1 +1,1 @@
-rsync -aHxv --numeric-ids --update --progress -e "ssh -T -c aes128-gcm@openssh.com -o Compression=no -x" --exclude-from=exclude.txt vigi99@10.96.100.112:/Users/vigi99/AirtelDEV/MixMatch-pytorch /tts_data/kaggle/mixmatch-dual-input
+rsync -aHxv --numeric-ids --update --progress -e "ssh -T -c aes128-gcm@openssh.com -o Compression=no -x" --exclude-from=exclude.txt vigi99@10.96.100.112:/Users/vigi99/AirtelDEV/MixMatch-pytorch/ /tts_data/kaggle/mixmatch/MixMatch-pytorch/

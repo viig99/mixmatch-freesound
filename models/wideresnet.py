@@ -50,19 +50,10 @@ class WideResNet(nn.Module):
         assert((depth - 4) % 6 == 0)
         n = (depth - 4) // 6
         block = BasicBlock
-        self.nChannels = 2 * nChannels[3]
+        self.nChannels = nChannels[3]
         self.route1 = nn.Sequential(nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False),
                                NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True), 
-                            NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate), 
-                            NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate), 
-                            nn.BatchNorm2d(nChannels[3], momentum=0.001), 
-                            nn.LeakyReLU(negative_slope=0.1, inplace=True), 
-                            nn.AdaptiveAvgPool2d(1))
-        self.route2 = nn.Sequential(nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
-                               padding=1, bias=False),
-                            nn.AvgPool2d(1, stride=(6,1)),
-                            NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate, activate_before_residual=True), 
                             NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate), 
                             NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate), 
                             nn.BatchNorm2d(nChannels[3], momentum=0.001), 
@@ -82,9 +73,6 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-        x1, x2 = torch.split(x, [80, x.shape[2] - 80], dim=2)
-        out1 = self.route1(x1)
-        out2 = self.route2(x2)
-        out = torch.cat([out1, out2], dim=1)
+        out = self.route1(x)
         out = out.view(-1, self.nChannels)
         return self.fc(out)
